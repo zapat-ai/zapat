@@ -135,6 +135,7 @@ function getCompletedItems() {
 
 function classifyPrStage(labels) {
   if (labels.includes('zapat-rework')) return 'rework';
+  if (labels.includes('zapat-testing')) return 'testing';
   if (labels.includes('zapat-review')) return 'review';
   return 'in-progress';
 }
