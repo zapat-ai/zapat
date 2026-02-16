@@ -145,6 +145,7 @@ _pane_health_should_notify() {
 }
 
 # Check all panes in a tmux window for stuck prompts and auto-resolve them.
+# Collects issues across all panes and sends a single batched Slack notification.
 # Usage: check_pane_health "window-name" "job_name"
 check_pane_health() {
     local window="$1"
@@ -153,6 +154,15 @@ check_pane_health() {
     local panes
 
     panes=$(tmux list-panes -t "${TMUX_SESSION}:${window}" -F '#{pane_index}' 2>/dev/null) || return 0
+
+    # Batch counters for notification aggregation
+    local rate_limit_panes=""
+    local permission_panes=""
+    local fatal_panes=""
+    local fatal_snippets=""
+    local rate_limit_count=0
+    local permission_count=0
+    local fatal_count=0
 
     for pane_idx in $panes; do
         local content
@@ -170,13 +180,8 @@ check_pane_health() {
                 log_info "Auto-resolved rate limit prompt in pane ${pane_id}"
             fi
 
-            if _pane_health_should_notify "$pane_id" "rate_limit"; then
-                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
-                    --slack \
-                    --message "Rate limit detected in pane ${pane_id} (job: ${job_name}). Auto-resolve: ${auto_resolve}" \
-                    --job-name "pane-health" \
-                    --status failure 2>/dev/null || log_warn "Pane health Slack notification failed"
-            fi
+            rate_limit_count=$((rate_limit_count + 1))
+            rate_limit_panes="${rate_limit_panes:+${rate_limit_panes}, }${pane_id}"
             continue
         fi
 
@@ -190,13 +195,8 @@ check_pane_health() {
                 log_info "Auto-resolved permission prompt in pane ${pane_id}"
             fi
 
-            if _pane_health_should_notify "$pane_id" "permission"; then
-                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
-                    --slack \
-                    --message "Permission prompt detected in pane ${pane_id} (job: ${job_name}). Auto-resolve: ${auto_resolve}" \
-                    --job-name "pane-health" \
-                    --status failure 2>/dev/null || log_warn "Pane health Slack notification failed"
-            fi
+            permission_count=$((permission_count + 1))
+            permission_panes="${permission_panes:+${permission_panes}, }${pane_id}"
             continue
         fi
 
@@ -208,16 +208,38 @@ check_pane_health() {
             _log_structured "error" "Fatal error detected in pane ${pane_id}" \
                 "\"type\":\"pane_health\",\"issue\":\"fatal\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
 
-            if _pane_health_should_notify "$pane_id" "fatal"; then
-                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
-                    --slack \
-                    --message "FATAL: Crash detected in pane ${pane_id} (job: ${job_name}).\n\`\`\`\n${error_snippet}\n\`\`\`" \
-                    --job-name "pane-health" \
-                    --status emergency 2>/dev/null || log_warn "Pane health Slack notification failed"
-            fi
+            fatal_count=$((fatal_count + 1))
+            fatal_panes="${fatal_panes:+${fatal_panes}, }${pane_id}"
+            fatal_snippets="${fatal_snippets:+${fatal_snippets}\n---\n}[${pane_id}] ${error_snippet}"
             continue
         fi
     done
+
+    # Send one batched notification if any issues were found
+    local total_issues=$((rate_limit_count + permission_count + fatal_count))
+    if [[ $total_issues -gt 0 ]] && _pane_health_should_notify "batch-summary" "${job_name}"; then
+        local message="Pane health summary for ${window} (job: ${job_name}):"
+        if [[ $rate_limit_count -gt 0 ]]; then
+            message="${message}\n• Rate limit: ${rate_limit_count} pane(s) [${rate_limit_panes}] (auto-resolve: ${auto_resolve})"
+        fi
+        if [[ $permission_count -gt 0 ]]; then
+            message="${message}\n• Permission: ${permission_count} pane(s) [${permission_panes}] (auto-resolve: ${auto_resolve})"
+        fi
+        if [[ $fatal_count -gt 0 ]]; then
+            message="${message}\n• FATAL: ${fatal_count} pane(s) [${fatal_panes}]\n\`\`\`\n${fatal_snippets}\n\`\`\`"
+        fi
+
+        local status="failure"
+        if [[ $fatal_count -gt 0 ]]; then
+            status="emergency"
+        fi
+
+        "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
+            --slack \
+            --message "$message" \
+            --job-name "pane-health" \
+            --status "$status" 2>/dev/null || log_warn "Pane health Slack notification failed"
+    fi
 }
 
 # Monitor a Claude session with timeout
