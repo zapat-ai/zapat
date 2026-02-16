@@ -97,6 +97,13 @@ rm -f "$PROMPT_FILE"
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_ISSUE_TRIAGE:-600}
 monitor_session "$TMUX_WINDOW" "$TIMEOUT" 15 "triage-${REPO##*/}#${ISSUE_NUMBER}"
+monitor_exit=$?
+
+if [[ $monitor_exit -eq 2 ]]; then
+    log_warn "Session rate limited, scheduling retry for issue #${ISSUE_NUMBER} triage"
+    [[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "rate_limited"
+    exit 0
+fi
 
 log_info "Triage session ended for issue #${ISSUE_NUMBER}"
 

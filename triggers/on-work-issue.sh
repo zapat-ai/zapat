@@ -165,6 +165,14 @@ rm -f "$PROMPT_FILE"
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_IMPLEMENT:-1800}
 monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "agent-work-${REPO##*/}#${ISSUE_NUMBER}"
+monitor_exit=$?
+
+if [[ $monitor_exit -eq 2 ]]; then
+    log_warn "Session rate limited, scheduling retry for issue #${ISSUE_NUMBER}"
+    [[ -n "$ITEM_STATE_FILE" && -f "$ITEM_STATE_FILE" ]] && update_item_state "$ITEM_STATE_FILE" "rate_limited"
+    [[ -n "${SLOT_FILE:-}" && -f "${SLOT_FILE:-}" ]] && release_slot "$SLOT_FILE"
+    exit 0
+fi
 
 log_info "Agent-work session ended for issue #${ISSUE_NUMBER}"
 

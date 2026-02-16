@@ -135,6 +135,14 @@ rm -f "$PROMPT_FILE"
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_TEST_PR:-1200}
 monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "test-${REPO##*/}#${PR_NUMBER}"
+monitor_exit=$?
+
+if [[ $monitor_exit -eq 2 ]]; then
+    log_warn "Session rate limited, scheduling retry for PR #${PR_NUMBER} test"
+    [[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "rate_limited"
+    [[ -n "${SLOT_FILE:-}" && -f "${SLOT_FILE:-}" ]] && release_slot "$SLOT_FILE"
+    exit 0
+fi
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

@@ -6,6 +6,7 @@
 TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
 # Patterns for detecting stuck panes
+PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
 PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
 PANE_PATTERN_PERMISSION="(Allow|Deny|permission|Do you want to|approve this)"
 PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
@@ -181,7 +182,25 @@ check_pane_health() {
 
         local pane_id="${window}.${pane_idx}"
 
-        # Priority 1: Rate limit prompt
+        # Priority 0: Account-level rate limit (unrecoverable in-place)
+        if echo "$content" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"; then
+            _log_structured "error" "Account-level rate limit detected in pane ${pane_id}" \
+                "\"type\":\"pane_health\",\"issue\":\"account_rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+
+            # Signal monitor_session to tear down this session
+            echo "rate_limited" > "/tmp/zapat-pane-signal-${window}"
+
+            if _pane_health_should_notify "$pane_id" "account_rate_limit"; then
+                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
+                    --slack \
+                    --message "Account rate limit hit in pane ${pane_id} (job: ${job_name}). Session will be paused and retried later." \
+                    --job-name "pane-health" \
+                    --status failure 2>/dev/null || log_warn "Pane health Slack notification failed"
+            fi
+            continue
+        fi
+
+        # Priority 1: Rate limit prompt (model switch — recoverable)
         if echo "$content" | grep -qE "$PANE_PATTERN_RATE_LIMIT"; then
             _log_structured "warn" "Rate limit detected in pane ${pane_id}" \
                 "\"type\":\"pane_health\",\"issue\":\"rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
@@ -255,14 +274,18 @@ check_pane_health() {
 
 # Monitor a Claude session with timeout
 # Usage: monitor_session "window-name" timeout_seconds [check_interval] [job_name]
-# Returns: 0 if session ended normally, 1 if timed out
+# Returns: 0 if session ended normally, 1 if timed out, 2 if account rate limited
 monitor_session() {
     local window="$1"
     local timeout="$2"
     local interval="${3:-15}"
     local job_name="${4:-monitor}"
+    local signal_file="/tmp/zapat-pane-signal-${window}"
     local start
     start=$(date +%s)
+
+    # Clean up any stale signal file from a previous run
+    rm -f "$signal_file"
 
     log_info "Monitoring session '$window' (timeout: ${timeout}s)"
 
@@ -279,12 +302,31 @@ monitor_session() {
             if tmux list-windows -t "$TMUX_SESSION" -F '#{window_name}' 2>/dev/null | grep -qF "$window"; then
                 tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
             fi
+            rm -f "$signal_file"
             return 1
         fi
         check_pane_health "$window" "$job_name"
+
+        # Check for account-level rate limit signal
+        if [[ -f "$signal_file" ]] && [[ "$(cat "$signal_file" 2>/dev/null)" == "rate_limited" ]]; then
+            log_warn "Account rate limit signal detected for session '$window' — tearing down"
+            # Graceful shutdown
+            tmux send-keys -t "${TMUX_SESSION}:${window}" C-c
+            sleep 3
+            tmux send-keys -t "${TMUX_SESSION}:${window}" "/exit" Enter
+            sleep 5
+            # Force kill if still alive
+            if tmux list-windows -t "$TMUX_SESSION" -F '#{window_name}' 2>/dev/null | grep -qF "$window"; then
+                tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
+            fi
+            rm -f "$signal_file"
+            return 2
+        fi
+
         sleep "$interval"
     done
 
+    rm -f "$signal_file"
     log_info "Session '$window' ended normally"
     return 0
 }

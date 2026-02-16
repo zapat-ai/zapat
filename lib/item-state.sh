@@ -96,6 +96,19 @@ update_item_state() {
                 date -u -d "+5 minutes" '+%Y-%m-%dT%H:%M:%SZ')
             updates="$updates | .status = \"pending\" | .next_retry_after = \"$retry_time\""
             ;;
+        rate_limited)
+            # Account-level rate limit: configurable delay, does NOT count toward attempt limit
+            local retry_minutes="${RATE_LIMIT_RETRY_MINUTES:-60}"
+            local retry_time
+            retry_time=$(date -u -v+${retry_minutes}M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
+                date -u -d "+${retry_minutes} minutes" '+%Y-%m-%dT%H:%M:%SZ')
+            updates="$updates | .status = \"pending\" | .next_retry_after = \"$retry_time\""
+            updates="$updates | .last_error = \"Account rate limit hit\""
+            # Decrement attempts to cancel the increment from "running" — not the agent's fault
+            if [[ $attempts -gt 0 ]]; then
+                updates="$updates | .attempts = $((attempts - 1))"
+            fi
+            ;;
         completed)
             updates="$updates | .next_retry_after = null | .last_error = null"
             ;;
