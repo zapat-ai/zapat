@@ -249,7 +249,56 @@ touch "$SCRIPT_DIR/state/processed-work.txt"
 touch "$SCRIPT_DIR/state/processed-rework.txt"
 touch "$SCRIPT_DIR/state/processed-write-tests.txt"
 touch "$SCRIPT_DIR/state/processed-research.txt"
+touch "$SCRIPT_DIR/state/processed-auto-triage.txt"
 log_info "State files ready"
+
+# --- First-boot state bootstrapping ---
+# When state files are empty (fresh install), seed them with all currently
+# open issues/PRs so the poller doesn't treat the entire backlog as new.
+if [[ ! -s "$SCRIPT_DIR/state/processed-issues.txt" ]]; then
+    log_info "First boot detected — seeding existing issues as already processed..."
+    SEED_COUNT=0
+    while IFS= read -r proj; do
+        [[ -z "$proj" ]] && continue
+        while IFS=$'\t' read -r repo local_path repo_type; do
+            [[ -z "$repo" ]] && continue
+            # Seed open issues
+            while IFS= read -r num; do
+                [[ -z "$num" ]] && continue
+                echo "${repo}#${num}" >> "$SCRIPT_DIR/state/processed-issues.txt"
+                echo "${repo}#auto-${num}" >> "$SCRIPT_DIR/state/processed-auto-triage.txt"
+                echo "${repo}#${num}" >> "$SCRIPT_DIR/state/processed-work.txt"
+                echo "${repo}#${num}" >> "$SCRIPT_DIR/state/processed-research.txt"
+                echo "${repo}#${num}" >> "$SCRIPT_DIR/state/processed-write-tests.txt"
+                SEED_COUNT=$((SEED_COUNT + 1))
+            done < <(gh issue list --repo "$repo" --state open --limit 500 --json number --jq '.[].number' 2>/dev/null || true)
+        done < <(read_repos "$proj")
+    done < <(read_projects)
+    # Deduplicate
+    for f in processed-issues.txt processed-auto-triage.txt processed-work.txt processed-research.txt processed-write-tests.txt; do
+        sort -u -o "$SCRIPT_DIR/state/$f" "$SCRIPT_DIR/state/$f" 2>/dev/null || true
+    done
+    log_info "Seeded $SEED_COUNT existing issues across all repos"
+fi
+
+# Same for PRs
+if [[ ! -s "$SCRIPT_DIR/state/processed-prs.txt" ]]; then
+    log_info "First boot detected — seeding existing PRs as already processed..."
+    PR_SEED_COUNT=0
+    while IFS= read -r proj; do
+        [[ -z "$proj" ]] && continue
+        while IFS=$'\t' read -r repo local_path repo_type; do
+            [[ -z "$repo" ]] && continue
+            while IFS= read -r num; do
+                [[ -z "$num" ]] && continue
+                echo "${repo}#${num}" >> "$SCRIPT_DIR/state/processed-prs.txt"
+                PR_SEED_COUNT=$((PR_SEED_COUNT + 1))
+            done < <(gh pr list --repo "$repo" --state open --limit 500 --json number --jq '.[].number' 2>/dev/null || true)
+        done < <(read_repos "$proj")
+    done < <(read_projects)
+    sort -u -o "$SCRIPT_DIR/state/processed-prs.txt" "$SCRIPT_DIR/state/processed-prs.txt" 2>/dev/null || true
+    log_info "Seeded $PR_SEED_COUNT existing PRs across all repos"
+fi
 
 # --- Notify ---
 if [[ -n "${SLACK_WEBHOOK_URL:-}" && "$SLACK_WEBHOOK_URL" != *"YOUR"* ]]; then
