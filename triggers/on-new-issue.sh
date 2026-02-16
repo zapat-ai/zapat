@@ -93,7 +93,7 @@ rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_ISSUE_TRIAGE:-600}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT"
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 15 "triage-${REPO##*/}#${ISSUE_NUMBER}"
 
 log_info "Triage session ended for issue #${ISSUE_NUMBER}"
 

@@ -162,7 +162,7 @@ rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_IMPLEMENT:-1800}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "agent-work-${REPO##*/}#${ISSUE_NUMBER}"
 
 log_info "Agent-work session ended for issue #${ISSUE_NUMBER}"
 

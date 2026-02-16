@@ -344,6 +344,57 @@ export function getHealthChecks(): HealthCheck[] {
     checks.push({ name: 'failed-items', status: 'ok', message: 'No items directory' })
   }
 
+  // Check stuck panes
+  const tmuxSessionExists = checks.some(c => c.name === 'tmux-session' && c.status === 'ok')
+  if (tmuxSessionExists) {
+    const windowsOutput = exec('tmux list-windows -t zapat -F "#{window_name}" 2>/dev/null')
+    if (windowsOutput) {
+      const windows = windowsOutput.split('\n').filter(Boolean)
+      let stuckPanes: string[] = []
+      const ratePattern = /Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after/
+      const permPattern = /Allow|Deny|permission|Do you want to|approve this/
+      const fatalPattern = /FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL/
+
+      for (const win of windows) {
+        const panesOutput = exec(`tmux list-panes -t "zapat:${win}" -F "#{pane_index}" 2>/dev/null`)
+        if (!panesOutput) continue
+        for (const paneIdx of panesOutput.split('\n').filter(Boolean)) {
+          const content = exec(`tmux capture-pane -t "zapat:${win}.${paneIdx}" -p 2>/dev/null`)
+          if (!content) continue
+          if (ratePattern.test(content)) {
+            stuckPanes.push(`${win}.${paneIdx}: rate limit`)
+          } else if (permPattern.test(content)) {
+            stuckPanes.push(`${win}.${paneIdx}: permission prompt`)
+          } else if (fatalPattern.test(content)) {
+            stuckPanes.push(`${win}.${paneIdx}: fatal error`)
+          }
+        }
+      }
+
+      if (stuckPanes.length === 0) {
+        const totalPanes = windows.reduce((sum, win) => {
+          const p = exec(`tmux list-panes -t "zapat:${win}" -F "#{pane_index}" 2>/dev/null`)
+          return sum + (p ? p.split('\n').filter(Boolean).length : 0)
+        }, 0)
+        checks.push({
+          name: 'stuck-panes',
+          status: 'ok',
+          message: `Scanned ${totalPanes} pane(s) across ${windows.length} window(s), none stuck`,
+        })
+      } else {
+        checks.push({
+          name: 'stuck-panes',
+          status: 'error',
+          message: `${stuckPanes.length} stuck pane(s): ${stuckPanes.join('; ')}`,
+        })
+      }
+    } else {
+      checks.push({ name: 'stuck-panes', status: 'ok', message: 'No tmux windows to scan' })
+    }
+  } else {
+    checks.push({ name: 'stuck-panes', status: 'ok', message: 'tmux session not running' })
+  }
+
   // Check orphaned worktrees
   const worktreeDir = join(getAutomationDir(), 'worktrees')
   if (existsSync(worktreeDir)) {

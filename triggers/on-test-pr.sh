@@ -137,7 +137,7 @@ rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_TEST_PR:-1200}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "test-${REPO##*/}#${PR_NUMBER}"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

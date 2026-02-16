@@ -131,7 +131,7 @@ rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_WRITE_TESTS:-1800}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "write-tests-${REPO##*/}#${ISSUE_NUMBER}"
 
 log_info "Write-tests session ended for issue #${ISSUE_NUMBER}"
 

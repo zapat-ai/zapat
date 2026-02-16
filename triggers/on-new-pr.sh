@@ -104,7 +104,7 @@ rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_PR_REVIEW:-600}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT"
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 15 "pr-review-${REPO##*/}#${PR_NUMBER}"
 
 log_info "Review session ended for PR #${PR_NUMBER}"
 

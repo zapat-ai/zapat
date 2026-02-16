@@ -5,6 +5,11 @@
 
 TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
+# Patterns for detecting stuck panes
+PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
+PANE_PATTERN_PERMISSION="(Allow|Deny|permission|Do you want to|approve this)"
+PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
+
 # Wait for specific content to appear in a tmux pane
 # Usage: wait_for_tmux_content "window-name" "pattern" [timeout_seconds]
 # Returns: 0 if pattern found, 1 if timeout
@@ -112,13 +117,117 @@ launch_claude_session() {
     return 0
 }
 
+# File-based notification throttle — limits to 1 notification per pane per
+# issue type every 5 minutes to prevent Slack spam from the 15s check interval.
+# Usage: _pane_health_should_notify "pane_id" "issue_type"
+# Returns: 0 if should notify, 1 if throttled
+_pane_health_should_notify() {
+    local pane_id="$1"
+    local issue_type="$2"
+    local throttle_dir="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-health-throttle"
+    local throttle_file="${throttle_dir}/${pane_id}--${issue_type}"
+    local cooldown=300  # 5 minutes
+
+    mkdir -p "$throttle_dir"
+
+    if [[ -f "$throttle_file" ]]; then
+        local last_notify
+        last_notify=$(cat "$throttle_file" 2>/dev/null || echo "0")
+        local now
+        now=$(date +%s)
+        if (( now - last_notify < cooldown )); then
+            return 1  # throttled
+        fi
+    fi
+
+    date +%s > "$throttle_file"
+    return 0
+}
+
+# Check all panes in a tmux window for stuck prompts and auto-resolve them.
+# Usage: check_pane_health "window-name" "job_name"
+check_pane_health() {
+    local window="$1"
+    local job_name="${2:-monitor}"
+    local auto_resolve="${AUTO_RESOLVE_PROMPTS:-true}"
+    local panes
+
+    panes=$(tmux list-panes -t "${TMUX_SESSION}:${window}" -F '#{pane_index}' 2>/dev/null) || return 0
+
+    for pane_idx in $panes; do
+        local content
+        content=$(tmux capture-pane -t "${TMUX_SESSION}:${window}.${pane_idx}" -p 2>/dev/null) || continue
+
+        local pane_id="${window}.${pane_idx}"
+
+        # Priority 1: Rate limit prompt
+        if echo "$content" | grep -qE "$PANE_PATTERN_RATE_LIMIT"; then
+            _log_structured "warn" "Rate limit detected in pane ${pane_id}" \
+                "\"type\":\"pane_health\",\"issue\":\"rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+
+            if [[ "$auto_resolve" == "true" ]]; then
+                tmux send-keys -t "${TMUX_SESSION}:${window}.${pane_idx}" Down Enter
+                log_info "Auto-resolved rate limit prompt in pane ${pane_id}"
+            fi
+
+            if _pane_health_should_notify "$pane_id" "rate_limit"; then
+                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
+                    --slack \
+                    --message "Rate limit detected in pane ${pane_id} (job: ${job_name}). Auto-resolve: ${auto_resolve}" \
+                    --job-name "pane-health" \
+                    --status failure 2>/dev/null || log_warn "Pane health Slack notification failed"
+            fi
+            continue
+        fi
+
+        # Priority 2: Permission prompt
+        if echo "$content" | grep -qE "$PANE_PATTERN_PERMISSION"; then
+            _log_structured "warn" "Permission prompt detected in pane ${pane_id}" \
+                "\"type\":\"pane_health\",\"issue\":\"permission\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+
+            if [[ "$auto_resolve" == "true" ]]; then
+                tmux send-keys -t "${TMUX_SESSION}:${window}.${pane_idx}" Enter
+                log_info "Auto-resolved permission prompt in pane ${pane_id}"
+            fi
+
+            if _pane_health_should_notify "$pane_id" "permission"; then
+                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
+                    --slack \
+                    --message "Permission prompt detected in pane ${pane_id} (job: ${job_name}). Auto-resolve: ${auto_resolve}" \
+                    --job-name "pane-health" \
+                    --status failure 2>/dev/null || log_warn "Pane health Slack notification failed"
+            fi
+            continue
+        fi
+
+        # Priority 3: Fatal error (no auto-resolve)
+        if echo "$content" | grep -qE "$PANE_PATTERN_FATAL"; then
+            local error_snippet
+            error_snippet=$(echo "$content" | grep -E "$PANE_PATTERN_FATAL" | tail -3)
+
+            _log_structured "error" "Fatal error detected in pane ${pane_id}" \
+                "\"type\":\"pane_health\",\"issue\":\"fatal\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+
+            if _pane_health_should_notify "$pane_id" "fatal"; then
+                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
+                    --slack \
+                    --message "FATAL: Crash detected in pane ${pane_id} (job: ${job_name}).\n\`\`\`\n${error_snippet}\n\`\`\`" \
+                    --job-name "pane-health" \
+                    --status emergency 2>/dev/null || log_warn "Pane health Slack notification failed"
+            fi
+            continue
+        fi
+    done
+}
+
 # Monitor a Claude session with timeout
-# Usage: monitor_session "window-name" timeout_seconds [check_interval]
+# Usage: monitor_session "window-name" timeout_seconds [check_interval] [job_name]
 # Returns: 0 if session ended normally, 1 if timed out
 monitor_session() {
     local window="$1"
     local timeout="$2"
     local interval="${3:-15}"
+    local job_name="${4:-monitor}"
     local start
     start=$(date +%s)
 
@@ -139,6 +248,7 @@ monitor_session() {
             fi
             return 1
         fi
+        check_pane_health "$window" "$job_name"
         sleep "$interval"
     done
 

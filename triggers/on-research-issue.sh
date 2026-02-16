@@ -93,7 +93,7 @@ rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_RESEARCH:-1800}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "research-${REPO##*/}#${ISSUE_NUMBER}"
 
 log_info "Research session ended for issue #${ISSUE_NUMBER}"
 

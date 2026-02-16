@@ -153,7 +153,7 @@ rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_IMPLEMENT:-1800}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "rework-${REPO##*/}#${PR_NUMBER}"
 
 log_info "Agent-rework session ended for PR #${PR_NUMBER}"
 
