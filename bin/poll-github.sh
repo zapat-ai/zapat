@@ -189,9 +189,9 @@ scan_mentions() {
         fi
     fi
 
-    # Fetch recent comments
+    # Fetch recent comments (since window is short, no pagination needed)
     local comments_json
-    comments_json=$(gh_safe 'gh api "repos/'"${repo}"'/issues/comments" -f since="'"$since_ts"'" --paginate') || return 0
+    comments_json=$(gh_safe 'gh api "repos/'"${repo}"'/issues/comments?since='"${since_ts}"'"') || return 0
 
     local comment_count
     comment_count=$(echo "$comments_json" | jq 'length' 2>/dev/null || echo "0")
