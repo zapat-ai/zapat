@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "zapat",
+  "description": "On-demand AI dev teams, powered by Claude Code",
+  "owner": {
+    "name": "zapat-ai",
+    "url": "https://github.com/zapat-ai"
+  },
+  "plugins": [
+    {
+      "name": "zapat",
+      "description": "Autonomous dev pipeline powered by Claude Code. Label a GitHub issue, walk away, come back to a merge-ready PR.",
+      "version": "1.0.0",
+      "author": {
+        "name": "zapat-ai",
+        "url": "https://github.com/zapat-ai"
+      },
+      "source": "./plugins/zapat",
+      "category": "automation",
+      "homepage": "https://github.com/zapat-ai/zapat"
+    }
+  ]
+}

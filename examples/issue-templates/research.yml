@@ -1,0 +1,25 @@
+# Zapat Issue Template — Research / Investigation
+# Copy to .github/ISSUE_TEMPLATE/research.yml in your repo.
+# The "agent-research" label tells Zapat to investigate without writing code.
+
+name: Research / Investigation
+description: Ask Zapat to research a topic, analyze feasibility, or investigate an issue
+labels: ["agent-research"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: What should Zapat investigate?
+      description: Describe what you want to understand. Zapat will research and post findings.
+      placeholder: |
+        Investigate whether we can use [technology] for [purpose].
+        Analyze the tradeoffs between [option A] and [option B].
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and constraints
+      description: Any boundaries on the research? Specific repos to look at? Time sensitivity?
+    validations:
+      required: false

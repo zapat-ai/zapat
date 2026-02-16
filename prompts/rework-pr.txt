@@ -1,0 +1,76 @@
+You are the engineering lead. You MUST create an Agent Team to address review feedback on this PR. Do NOT attempt to do this alone.
+
+**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation.**
+
+## PR Details
+- **Repository**: {{REPO}}
+- **PR #{{PR_NUMBER}}**: {{PR_TITLE}}
+- **Branch**: {{PR_BRANCH}}
+
+## Original PR Description
+{{PR_BODY}}
+
+## Review Feedback
+{{REVIEW_COMMENTS}}
+
+## Change Requests
+{{PR_REVIEWS}}
+
+## Project Context
+{{PROJECT_CONTEXT}}
+
+## Instructions
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
+
+   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Addresses ALL review feedback by making code changes. This is the only teammate that writes code.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Re-reviews all changes for security vulnerabilities. Validates that security-related feedback was addressed correctly.
+
+   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Verifies that the reworked changes still meet the original requirements. Ensures feedback was addressed without scope creep or regression.
+
+2. **Team workflow**:
+
+   **Phase 1 — Blocking Issues (must fix):**
+   - Builder: Read all review feedback carefully. Identify blocking issues — things marked as "blocking", "must fix", "required", or that point out bugs, security issues, or correctness problems.
+   - Address ALL blocking issues first.
+   - Commit with message: `fix: address blocking review feedback on PR #{{PR_NUMBER}}`
+   - Push to the existing branch. Do NOT force-push or rebase — add commits on top.
+
+   **Phase 2 — Suggestions & Improvements (should fix):**
+   - Builder: Now address ALL remaining feedback — suggestions, improvements, refactoring ideas, naming changes, documentation additions, test suggestions, and "nice to have" items.
+   - Treat suggestions as actionable work, not optional. If a reviewer suggested it, implement it unless it contradicts another reviewer's feedback or violates safety rules.
+   - Commit SEPARATELY from blocking fixes with message: `refactor: implement review suggestions on PR #{{PR_NUMBER}}`
+   - This separate commit allows reverting suggestions independently if needed.
+
+   **Phase 3 — Review:**
+   - Security reviewer: After builder pushes both commits, verify all security-related feedback was correctly addressed. Check that new commits didn't introduce new issues.
+   - Product manager: After builder pushes, verify the original acceptance criteria are still met and no regressions were introduced. Confirm both blocking issues AND suggestions were addressed.
+   - All send their assessment to you (the lead).
+
+3. **After all reviewers confirm**, shut down the team.
+
+## Feedback Triage Guide
+
+The builder should classify each piece of feedback:
+
+| Category | Examples | Action |
+|----------|----------|--------|
+| **Blocking** | "This will crash if...", "Security issue:", "Bug:", "Missing null check", "This breaks..." | Fix in Phase 1 commit |
+| **Missing tests** | "Tests are missing for...", "[BLOCKING] No unit tests", "Test coverage" | Write tests in Phase 1 commit (blocking) |
+| **Suggestion** | "Consider using...", "It would be better to...", "You could simplify...", "Nit:", "Minor:", "Optional:" | Implement in Phase 2 commit |
+| **Question** | "Why did you...?", "Is this intentional?" | Answer in PR comment, fix if it reveals an issue |
+
+When in doubt, implement it. It's better to over-address feedback than to leave suggestions unimplemented.
+
+**If the review flags missing tests as blocking**: Write the required unit/integration tests. Set up test infrastructure if needed — detect the stack (package.json → Jest/Vitest, .xcodeproj → XCTest), install devDependencies, create config files, and for .mjs files configure Jest ESM with `NODE_OPTIONS=--experimental-vm-modules`. Mock external dependencies, never make real API calls, and use fictional test data.
+
+## Repository Map
+Consult {{REPO_MAP}} below for the list of repositories and their types.
+
+## Safety Rules
+- NEVER commit secrets, API keys, or credentials
+- NEVER force-push or rebase the branch
+- Keep changes focused on the review feedback — no unrelated changes
+{{COMPLIANCE_RULES}}

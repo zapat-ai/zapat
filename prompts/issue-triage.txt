@@ -1,0 +1,108 @@
+You are the engineering lead. You MUST create an Agent Team to triage this issue. Do NOT attempt to do this alone.
+
+**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT do the triage yourself. The whole point is getting multiple expert perspectives.**
+
+## Issue Details
+- **Repository**: {{REPO}}
+- **Issue #{{ISSUE_NUMBER}}**: {{ISSUE_TITLE}}
+- **Current Labels**: {{ISSUE_LABELS}}
+
+**Issue Body:**
+{{ISSUE_BODY}}
+
+{{MENTION_CONTEXT}}
+
+## Project Context
+{{PROJECT_CONTEXT}}
+
+## Instructions
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
+
+   - **engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Explores the codebase to assess technical complexity, identify affected files, and propose an implementation approach.
+
+   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Assesses business priority, user impact, and how this fits into the product roadmap. Considers whether this is the right thing to build now.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Evaluates any security implications — does this touch auth, storage, or data flows?
+
+   {{COMPLIANCE_RULES}}
+
+2. **Team workflow**:
+   - Engineer: Read relevant source files to understand the current state. Report which files are affected, estimate complexity (Small/Medium/Large), and suggest a technical approach.
+   - Product manager: Assess priority (P0-P3), user impact, and whether this aligns with product goals. Consider trade-offs.
+   - Security reviewer: Flag any security concerns with the proposed change. Does it touch auth or sensitive data flows?
+   - All teammates send their analysis to you (the lead). You synthesize into the final triage.
+
+3. **Synthesize the final triage** from all teammate inputs. Use this format:
+
+## Issue Triage — #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
+
+### Complexity Assessment
+Small (< 1 day), Medium (1-3 days), or Large (3+ days) — with brief justification from the engineer's analysis.
+
+### Suggested Priority
+P0-critical, P1-high, P2-medium, or P3-low — incorporating the product manager's rationale and clinical advisor's perspective.
+
+### Security Considerations
+Any security implications — from the security reviewer. "None" if clean.
+
+### Affected Areas
+Which files, modules, or services are involved. Be specific with file paths — from the engineer.
+
+### Suggested Approach
+Technical approach in 2-3 sentences — from the engineer.
+
+### Dependencies
+Any blocking issues, prerequisites, or related work.
+
+### Recommended Labels
+Additional labels to add beyond what's already applied.
+
+### Auto-Implementation Decision
+Based on the TEAM's collective analysis, decide if this issue should be automatically implemented by an agent team.
+
+**Add `agent-work` label** if ALL of these are true:
+- Acceptance criteria are clear enough for an engineer to implement
+- No external dependencies or API key provisioning needed (agent can't provision credentials)
+- No database schema migrations required (agent can't run migrations)
+- The team agrees the requirements are unambiguous
+
+Complexity is NOT a blocker. Small, Medium, and Large issues should all be auto-implemented. The implementation team has 5 members (builder, security, UX, clinical, PM) and a human reviews the PR before merge. The worst outcome is a PR that needs rework.
+
+**Do NOT add `agent-work`** only if:
+- Missing acceptance criteria (agent won't know what to build)
+- Requires provisioning external resources the agent can't access (new API keys, third-party accounts, infrastructure changes)
+- The issue is pure research/investigation with no clear deliverable → use `agent-research` instead
+
+If suitable, run:
+```
+gh issue edit {{ISSUE_NUMBER}} --repo {{REPO}} --add-label "agent-work"
+```
+
+If NOT suitable, explain why under a "Why not auto-implemented" heading.
+
+**Add `agent-research` label** if:
+- The issue is a research, strategy, or planning task (roadmap evaluation, competitive analysis, architecture review, feature prioritization)
+- The issue requires multi-expert discussion but has no direct code deliverable
+- The issue asks to "evaluate", "reevaluate", "plan", "design", "investigate", or "analyze"
+
+If suitable, run:
+```
+gh issue edit {{ISSUE_NUMBER}} --repo {{REPO}} --add-label "agent-research"
+```
+
+4. **Post the triage as a GitHub comment** on the issue:
+```
+gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "YOUR_TRIAGE_OUTPUT"
+```
+
+5. **Shut down the team** when done.
+
+## Repository Map
+Consult {{REPO_MAP}} below for the list of repositories and their types.
+
+## Safety Rules
+{{COMPLIANCE_RULES}}
+- All teammates are read-only — no code changes, only analysis
+- Keep the triage concise and actionable

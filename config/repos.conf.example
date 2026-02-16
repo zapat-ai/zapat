@@ -1,0 +1,8 @@
+# Zapat — Repository Configuration
+# Format: owner/repo<TAB>local_path<TAB>type
+# Types: backend, web, ios, mobile, extension, marketing, other
+#
+# Examples:
+# your-org/backend	/home/you/code/backend	backend
+# your-org/web-app	/home/you/code/web-app	web
+# your-org/mobile	/home/you/code/mobile	mobile

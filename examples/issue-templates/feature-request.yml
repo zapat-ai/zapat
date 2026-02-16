@@ -1,0 +1,34 @@
+# Zapat Issue Template — Feature Request
+# Copy to .github/ISSUE_TEMPLATE/feature-request.yml in your repo.
+# The "agent" label is pre-applied so Zapat triages automatically.
+
+name: Feature Request
+description: Request a new feature for Zapat to triage and implement
+labels: ["agent", "enhancement"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What do you want?
+      description: Describe the feature. Be specific about what it should do and why.
+      placeholder: |
+        As a [user type], I want [feature] so that [benefit].
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is done? List specific, testable criteria.
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, references, related issues, or anything else that helps.
+    validations:
+      required: false

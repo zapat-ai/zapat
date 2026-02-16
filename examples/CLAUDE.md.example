@@ -1,0 +1,94 @@
+# Example: Organization-Specific CLAUDE.md
+#
+# Copy this to ~/.claude/CLAUDE.md and customize for your team.
+# Claude Code reads this file at the start of every session, so all agents
+# in your Zapat pipeline will follow these instructions automatically.
+
+# Acme Health — Global Instructions
+
+## Repository Map
+
+```
+Acme Health Repositories:
+- iOS App:       /home/dev/code/acme-ios          (Swift/SwiftUI, MVVM)
+- Web App:       /home/dev/code/acme-web           (Next.js 15, React 19, Tailwind)
+- Backend API:   /home/dev/code/acme-api           (Node.js, Express, PostgreSQL)
+- Infrastructure:/home/dev/code/acme-infra         (Terraform, AWS)
+- Marketing:     /home/dev/code/acme-marketing     (Astro, MDX)
+```
+
+## Compliance — Always
+
+- NEVER log or expose PHI (patient data) in any repo
+- Use Keychain for sensitive data on iOS, not UserDefaults
+- No patient identifiers in analytics, error messages, or crash reports
+- All API endpoints that touch patient data MUST have audit logging
+
+## Code Conventions
+
+- TypeScript for all new backend and web code
+- Swift for all iOS code (no Objective-C in new files)
+- Commit messages: conventional commits (feat:, fix:, chore:, docs:)
+- PR titles: under 70 characters, imperative mood
+- Branch naming: type/short-description (e.g., feat/patient-search)
+
+## Agent Team Recipes
+
+### 1. Feature Build Team
+
+**Trigger:** "Spin up the build team"
+
+| Teammate | Role | Focus |
+|----------|------|-------|
+| builder | engineer | Implement the feature in the target repo |
+| security | security-reviewer | Review for vulnerabilities and compliance |
+| ux | ux-reviewer | Review UI/UX for usability issues |
+| compliance | healthcare-advisor | Review for HIPAA compliance |
+
+**Collaboration:** Builder implements. Security and UX review in parallel.
+Compliance does a final check. Lead approves.
+
+### 2. Bug Squad
+
+**Trigger:** "Spin up the bug squad"
+
+| Teammate | Role | Focus |
+|----------|------|-------|
+| investigator-1 | engineer | Investigate hypothesis A |
+| investigator-2 | engineer | Investigate hypothesis B |
+
+**Collaboration:** Each investigator explores their hypothesis independently.
+They share findings. Lead identifies the root cause.
+
+### 3. Code Review Team
+
+**Trigger:** "Spin up the review team"
+
+| Teammate | Role | Focus |
+|----------|------|-------|
+| security | security-reviewer | OWASP vulnerabilities, secrets, auth gaps |
+| product | product-manager | Does the PR solve the right problem? |
+| ux | ux-reviewer | UI/UX implications |
+
+**Collaboration:** All review the PR independently, then discuss.
+Lead synthesizes into a single review.
+
+## Domain Rules
+
+### Patient Data
+- Patient names: display as "Last, First" in clinical views
+- Date of birth: always display as MM/DD/YYYY in US locale
+- Medical record numbers: mask in logs, show in UI only when needed
+- Session recordings: encrypt at rest, auto-delete after processing
+
+### API Conventions
+- All endpoints return: { success: boolean, data?: T, error?: string }
+- Pagination: cursor-based, not offset-based
+- Rate limiting: 100 req/min for authenticated, 10 req/min for public
+- Versioning: URL path (/v1/, /v2/), not headers
+
+### Testing Requirements
+- Backend: >80% line coverage, integration tests for all endpoints
+- iOS: unit tests for all ViewModels, UI tests for critical flows
+- Web: unit tests for utilities, component tests for interactive elements
+- All PRs must include tests for new functionality

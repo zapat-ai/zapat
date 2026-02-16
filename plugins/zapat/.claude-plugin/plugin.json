@@ -1,0 +1,9 @@
+{
+  "name": "zapat",
+  "version": "1.0.0",
+  "description": "Autonomous dev pipeline powered by Claude Code. Label a GitHub issue, walk away, come back to a merge-ready PR.",
+  "author": {
+    "name": "zapat-ai",
+    "url": "https://github.com/zapat-ai"
+  }
+}

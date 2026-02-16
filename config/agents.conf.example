@@ -1,0 +1,14 @@
+# Zapat — Agent Team Configuration
+# Maps team roles to agent persona file names (without .md extension)
+# These files live in agents/ and get copied to ~/.claude/agents/ during setup
+#
+# Core roles (required):
+builder=engineer
+security=security-reviewer
+product=product-manager
+ux=ux-reviewer
+#
+# Optional domain-specific roles:
+# compliance=healthcare-advisor
+# platform=ios-engineer
+# regulatory=fintech-compliance

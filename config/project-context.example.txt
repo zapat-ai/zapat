@@ -1,0 +1,36 @@
+# Project Context
+# This file describes your system architecture. It is injected into every agent
+# prompt as {{PROJECT_CONTEXT}} so agents understand how your repositories connect.
+#
+# Copy to project-context.txt and customize:
+#   cp config/project-context.example.txt config/project-context.txt
+#
+# The init-project.sh script auto-generates this from your repos.conf.
+
+## System Overview
+
+This project consists of the following repositories:
+
+### your-org/frontend (web)
+- **Local path**: /home/you/code/frontend
+- **Stack**: Next.js (React, TypeScript)
+
+### your-org/backend (backend)
+- **Local path**: /home/you/code/backend
+- **Stack**: AWS CDK (TypeScript, Lambda, DynamoDB)
+
+## Repository Relationships
+
+<!-- EDIT THIS SECTION: Describe how your repos connect -->
+<!-- Example: The frontend calls APIs defined in the backend repo -->
+<!-- Example: The backend exposes REST endpoints consumed by both frontend and mobile -->
+
+- The frontend calls REST APIs served by the backend's API Gateway
+- Backend Lambda functions read/write to DynamoDB tables
+- When an issue requires API changes, BOTH repos need updates
+
+## Cross-Repo Implementation Rules
+
+- If an issue requires changes in multiple repos, the triage agent should create separate sub-issues for each repo
+- Frontend changes that need a new API endpoint must specify the API contract in the issue body
+- Always read the relevant backend code before assuming an API endpoint exists or doesn't exist

@@ -1,0 +1,52 @@
+You are leading a test infrastructure project. Your goal is to set up automated testing for this repository.
+
+## Repository
+- **Repo**: {{REPO}}
+- **Local Path**: {{REPO_PATH}}
+- **Type**: {{REPO_TYPE}}
+
+## Instructions
+
+1. **Analyze the codebase**:
+   - Understand the project structure, key modules, and critical paths
+   - Identify the technology stack (language, framework, dependencies)
+   - Find any existing tests or test configuration
+   - List the 5 most critical workflows that need testing
+
+2. **Set up the test framework**:
+   - **Node.js/TypeScript repos**: Set up Jest or Vitest
+     - Install devDependencies: jest, @types/jest, ts-jest (or vitest)
+     - Create jest.config.js or vitest.config.ts
+     - Add `test` script to package.json
+     - Create test utilities directory (e.g., `__tests__/helpers/`)
+   - **iOS repos**: Set up XCTest
+     - Create test target if missing
+     - Set up test utilities and mock helpers
+   - **Add to .gitignore**: coverage/, .nyc_output/
+
+3. **Write foundational tests**:
+   - **Unit tests** for pure functions and business logic (at least 10 tests)
+   - **Integration tests** for critical workflows (at least 3)
+   - Focus on: authentication, core business logic, data persistence
+   - Create test fixtures with realistic but synthetic data
+
+4. **Verify the setup**:
+   - Run the test suite and confirm all tests pass
+   - Generate a coverage report
+   - Document what's covered and what's not
+
+5. **Create a PR** with the test infrastructure:
+   - Branch: `agent/test-infrastructure`
+   - Title: "feat: add test infrastructure and foundational tests"
+   - Description: List what was set up, what's covered, and next steps
+
+## Testing Priorities (by repo type)
+- **backend** (CDK): Lambda handler tests, DynamoDB operations, API Gateway integration
+- **ios**: ViewModel tests, service layer tests, model parsing tests
+- **web**: Component rendering, API integration, form validation
+- **extension**: Content script tests, background worker tests, popup UI tests
+
+## Safety Rules
+- NEVER modify production code to make tests pass — adapt tests to the code
+- Test fixtures should use realistic but fictional data
+{{COMPLIANCE_RULES}}

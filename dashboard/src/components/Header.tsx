@@ -1,0 +1,43 @@
+'use client'
+
+import Link from 'next/link'
+import { cn } from '@/lib/utils'
+
+import { Logo } from '@/components/Logo'
+import {
+  MobileNavigation,
+  useMobileNavigationStore,
+} from '@/components/MobileNavigation'
+import { ThemeToggle } from '@/components/ThemeToggle'
+
+export function Header({ className }: { className?: string }) {
+  const { isOpen: mobileNavIsOpen } = useMobileNavigationStore()
+
+  return (
+    <div
+      className={cn(
+        className,
+        'fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between gap-12 px-4 transition sm:px-6 lg:left-72 lg:z-30 lg:px-8 xl:left-80',
+        'backdrop-blur-sm bg-white/80 dark:bg-zinc-900/80',
+        mobileNavIsOpen && 'bg-white dark:bg-zinc-900',
+      )}
+    >
+      <div
+        className={cn(
+          'absolute inset-x-0 top-full h-px transition',
+          'bg-zinc-900/10 dark:bg-white/10',
+        )}
+      />
+      <div className="flex items-center gap-5 lg:hidden">
+        <MobileNavigation />
+        <Link href="/" aria-label="Home">
+          <Logo className="h-6" />
+        </Link>
+      </div>
+      <div className="hidden lg:block" />
+      <div className="flex items-center gap-5">
+        <ThemeToggle />
+      </div>
+    </div>
+  )
+}

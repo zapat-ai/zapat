@@ -1,0 +1,29 @@
+# Environment and local config (machine-specific)
+.env
+config/repos.conf
+config/agents.conf
+config/default/
+config/project-context.txt
+
+# Runtime state
+state/items/
+state/agent-work-slots/
+state/poll.lock/
+state/processed-*.txt
+state/*.pid
+
+# Logs
+logs/*.log
+logs/*.jsonl
+
+# Metrics and generated data
+data/metrics/*.jsonl
+data/dashboard.html
+
+# Node.js
+node_modules/
+.next/
+
+# OS files
+.DS_Store
+*.pid

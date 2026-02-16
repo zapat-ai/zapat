@@ -1,0 +1,38 @@
+{
+  "name": "zapat",
+  "version": "1.0.0",
+  "description": "Zapat — autonomous dev pipeline powered by Claude Code",
+  "author": "zapat-ai",
+  "license": "MIT",
+  "homepage": "https://github.com/zapat-ai/zapat",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zapat-ai/zapat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zapat-ai/zapat/issues"
+  },
+  "keywords": [
+    "pipeline",
+    "automation",
+    "github",
+    "code-review",
+    "agent-teams",
+    "ci-cd",
+    "triage",
+    "auto-merge",
+    "claude-code"
+  ],
+  "type": "module",
+  "bin": {
+    "zapat": "./bin/zapat"
+  },
+  "scripts": {
+    "start": "node bin/zapat",
+    "test": "node tests/check-consistency.mjs && npm run test:lint",
+    "test:lint": "shellcheck bin/*.sh triggers/*.sh lib/*.sh jobs/*.sh 2>/dev/null || echo 'shellcheck not installed — skipping'"
+  },
+  "dependencies": {
+    "commander": "^12.0.0"
+  }
+}

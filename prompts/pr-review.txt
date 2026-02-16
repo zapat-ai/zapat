@@ -1,0 +1,101 @@
+You are the engineering lead. You MUST create an Agent Team to review this PR. Do NOT attempt to review alone.
+
+**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT do the review yourself. The whole point is getting multiple expert perspectives.**
+
+## PR Details
+- **Repository**: {{REPO}}
+- **PR #{{PR_NUMBER}}**: {{PR_TITLE}}
+
+**PR Description:**
+{{PR_BODY}}
+
+**Changed Files:**
+{{PR_FILES}}
+
+**Diff:**
+```
+{{PR_DIFF}}
+```
+
+{{MENTION_CONTEXT}}
+
+## Project Context
+{{PROJECT_CONTEXT}}
+
+## Instructions
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
+
+   - **platform-engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Reviews code quality, architecture, patterns, performance, and correctness. Reads the surrounding codebase to understand context.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
+
+   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews any UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
+
+   {{COMPLIANCE_RULES}}
+
+2. **Team workflow**:
+   - Platform engineer: Read surrounding source files for context. Check for memory issues, crash risks, error handling gaps, performance concerns. Evaluate architectural fit.
+   - Security reviewer: Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.
+   - UX reviewer: If UI files are changed, evaluate for friction, accessibility, responsive design, and consistency. If no UI changes, report "No UI changes in this PR."
+   - All teammates send their review to you (the lead). You synthesize into the final review.
+
+3. **Review guidelines — DO NOT flag**:
+   - Swift/TypeScript style that matches existing code patterns
+   - "Should use Combine/async-await" unless existing code already uses it
+   - SwiftUI patterns that differ from latest WWDC but work fine
+   - Patterns already used elsewhere in the codebase
+
+4. **Synthesize the final review** from all teammate inputs. Use this format:
+
+## PR Review — #{{PR_NUMBER}}: {{PR_TITLE}}
+
+**Summary**:
+- **What**: One sentence describing what the PR does.
+- **Why**: One sentence on the motivation or problem being solved.
+- **Impact**: One sentence on scope of change — how many files, which subsystems, any user-facing effects.
+
+**Risk Level**: 🟢 Low / 🟡 Medium / 🔴 High — [brief reason]
+- 🟢 Low: cosmetic, docs, tests, config, or trivial code changes
+- 🟡 Medium: new features, refactors, dependency updates, or non-trivial logic changes
+- 🔴 High: auth/security changes, data model migrations, sensitive data handling, or breaking API changes
+
+**Auto-Merge Recommendation**: ✅ Safe to auto-merge / ⚠️ Needs human review / ❌ Do not auto-merge — [reason]
+
+**Security**: Findings from security reviewer. "Clean — no issues found." if none.
+
+**Code Quality**: Key findings from platform engineer.
+
+**UX Assessment**: Findings from UX reviewer, or "No UI changes."
+
+**Test Coverage**: Does this PR include tests for the changed code?
+- If tests are included: briefly describe what they cover
+- If tests are missing: list as [BLOCKING] what unit/integration tests should exist
+  - Unit tests: [specific functions/behaviors]
+  - Integration tests: [specific flows, if applicable]
+
+**Blocking Issues** (must fix before merge):
+List each issue with a clear description. Prefix each with `- [BLOCKING]`. These are bugs, security issues, crashes, or correctness problems. Write "None." if there are no blocking issues.
+
+**Suggestions** (should implement):
+List each suggestion with a clear, actionable description. Prefix each with `- [SUGGESTION]`. These are improvements, refactors, naming changes, better patterns, or enhancements. The rework agent WILL implement these, so be specific. Write "Looks good!" if there are no suggestions.
+
+<!-- risk:low|medium|high -->
+<!-- auto-merge:yes|delay|no -->
+<!-- missing-tests:none|unit|unit,integration -->
+
+5. **Post the review as a PR comment**:
+```
+gh pr comment {{PR_NUMBER}} --repo {{REPO}} --body "YOUR_REVIEW_OUTPUT"
+```
+
+6. **Shut down the team** when done.
+
+## Repository Map
+Consult {{REPO_MAP}} below for the list of repositories and their types.
+
+## Safety Rules
+{{COMPLIANCE_RULES}}
+- All teammates are read-only — no code changes, only review
+- Review the CHANGES, not the entire codebase. Don't flag existing patterns.

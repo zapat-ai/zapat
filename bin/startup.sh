@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+# Zapat - Post-Reboot Startup
+# Run this after reboot: bin/startup.sh
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
+
+echo "============================================"
+echo "  Zapat — Startup"
+echo "============================================"
+echo ""
+
+# --- Step 1: Check/Create .env and repos.conf ---
+if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
+    if [[ -f "$SCRIPT_DIR/.env.example" ]]; then
+        cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+        log_warn ".env created from .env.example — EDIT IT before running again!"
+        log_warn "Set at minimum: SLACK_WEBHOOK_URL, GH_TOKEN"
+        echo ""
+        echo "  Edit: $SCRIPT_DIR/.env"
+        echo ""
+        exit 1
+    else
+        log_error ".env.example not found. Something is wrong with the installation."
+        exit 1
+    fi
+fi
+
+# Check for repos.conf — look in project dirs first, fall back to top-level
+REPOS_FOUND=false
+for dir in "$SCRIPT_DIR"/config/*/; do
+    [[ -d "$dir" && -f "$dir/repos.conf" ]] && REPOS_FOUND=true && break
+done
+if [[ "$REPOS_FOUND" != "true" && ! -f "$SCRIPT_DIR/config/repos.conf" ]]; then
+    if [[ -f "$SCRIPT_DIR/config/repos.conf.example" ]]; then
+        cp "$SCRIPT_DIR/config/repos.conf.example" "$SCRIPT_DIR/config/repos.conf"
+        log_warn "repos.conf created from repos.conf.example — EDIT paths for this machine!"
+        echo ""
+        echo "  Edit: $SCRIPT_DIR/config/repos.conf"
+        echo ""
+        exit 1
+    else
+        log_error "repos.conf.example not found. Something is wrong with the installation."
+        exit 1
+    fi
+fi
+
+# --- Step 1b: Auto-migrate legacy single-project layout ---
+if [[ -f "$SCRIPT_DIR/config/repos.conf" && ! -L "$SCRIPT_DIR/config/repos.conf" && ! -d "$SCRIPT_DIR/config/default" ]]; then
+    log_info "Migrating single-project config to config/default/..."
+    mkdir -p "$SCRIPT_DIR/config/default"
+
+    mv "$SCRIPT_DIR/config/repos.conf" "$SCRIPT_DIR/config/default/repos.conf"
+    [[ -f "$SCRIPT_DIR/config/agents.conf" && ! -L "$SCRIPT_DIR/config/agents.conf" ]] && \
+        mv "$SCRIPT_DIR/config/agents.conf" "$SCRIPT_DIR/config/default/agents.conf"
+    [[ -f "$SCRIPT_DIR/config/project-context.txt" && ! -L "$SCRIPT_DIR/config/project-context.txt" ]] && \
+        mv "$SCRIPT_DIR/config/project-context.txt" "$SCRIPT_DIR/config/default/project-context.txt"
+
+    # Leave symlinks for backward compat (scripts run directly, not via poller)
+    ln -sf "default/repos.conf" "$SCRIPT_DIR/config/repos.conf"
+    [[ -f "$SCRIPT_DIR/config/default/agents.conf" ]] && \
+        ln -sf "default/agents.conf" "$SCRIPT_DIR/config/agents.conf"
+    [[ -f "$SCRIPT_DIR/config/default/project-context.txt" ]] && \
+        ln -sf "default/project-context.txt" "$SCRIPT_DIR/config/project-context.txt"
+
+    log_info "Migration complete. Config now in config/default/"
+fi
+
+load_env
+
+# --- Step 1c: Validate no repo overlap between projects ---
+if ! validate_no_repo_overlap; then
+    log_warn "Repo overlap detected between projects. Each repo should belong to exactly one project."
+fi
+
+# --- Step 2: tmux Session ---
+echo "[1/7] Setting up tmux session..."
+if tmux has-session -t zapat 2>/dev/null; then
+    log_info "tmux session 'zapat' already exists"
+else
+    tmux new-session -d -s zapat
+    log_info "tmux session 'zapat' created"
+fi
+
+# --- Step 3: Keychain (macOS only) ---
+echo "[2/7] Unlocking keychain..."
+if [[ "$(detect_os)" == "macos" ]]; then
+    if security unlock-keychain ~/Library/Keychains/login.keychain-db 2>/dev/null; then
+        log_info "Keychain unlocked"
+    else
+        log_warn "Keychain unlock skipped or failed (may already be unlocked)"
+    fi
+else
+    log_info "Keychain step skipped (not macOS)"
+fi
+
+# --- Step 4: Verify gh CLI ---
+echo "[3/7] Verifying GitHub CLI auth..."
+if [[ -z "${GH_TOKEN:-}" ]]; then
+    log_warn "GH_TOKEN not set in .env — gh CLI may not work in cron"
+    echo "  Set GH_TOKEN in .env for reliable headless operation"
+fi
+GH_USER=$(gh api user --jq .login 2>/dev/null || echo "")
+if [[ -n "$GH_USER" ]]; then
+    log_info "GitHub CLI authenticated as $GH_USER"
+else
+    log_error "GitHub CLI NOT authenticated"
+    echo ""
+    echo "  Set GH_TOKEN in .env (recommended) or run: gh auth login"
+    echo ""
+    exit 1
+fi
+
+# --- Step 5: Verify claude CLI ---
+echo "[4/7] Verifying claude CLI..."
+if command -v claude &>/dev/null; then
+    CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown")
+    log_info "claude CLI found (version: $CLAUDE_VERSION)"
+else
+    log_error "claude CLI NOT found"
+    echo ""
+    echo "  Install: npm install -g @anthropic-ai/claude-code"
+    echo ""
+    exit 1
+fi
+
+# --- Step 5b: Clean up orphaned worktrees ---
+echo "[4b/7] Cleaning up orphaned worktrees..."
+WORKTREE_CLEANED=0
+if [[ -d /tmp/agent-worktrees ]]; then
+    for wt in /tmp/agent-worktrees/*/; do
+        [[ -d "$wt" ]] || continue
+        rm -rf "$wt"
+        WORKTREE_CLEANED=$((WORKTREE_CLEANED + 1))
+    done
+fi
+
+# Prune worktrees in all repos (across all projects)
+while IFS= read -r proj; do
+    [[ -z "$proj" ]] && continue
+    while IFS=$'\t' read -r repo local_path repo_type; do
+        [[ -z "$repo" ]] && continue
+        if [[ -d "$local_path" ]]; then
+            git -C "$local_path" worktree prune 2>/dev/null || true
+        fi
+    done < <(read_repos "$proj")
+done < <(read_projects)
+
+log_info "Cleaned $WORKTREE_CLEANED orphaned worktrees"
+
+# --- Step 6: Pull repos ---
+echo "[5/7] Pulling latest code..."
+PULL_SUCCESS=0
+PULL_FAIL=0
+
+while IFS= read -r proj; do
+    [[ -z "$proj" ]] && continue
+    while IFS=$'\t' read -r repo local_path repo_type; do
+        [[ -z "$repo" ]] && continue
+        if [[ -d "$local_path" ]]; then
+            if git -C "$local_path" pull --ff-only &>/dev/null; then
+                log_info "Pulled $repo"
+                PULL_SUCCESS=$((PULL_SUCCESS + 1))
+            else
+                log_warn "Failed to pull $repo (may have local changes)"
+                PULL_FAIL=$((PULL_FAIL + 1))
+            fi
+        else
+            log_warn "Repo path not found: $local_path ($repo)"
+            PULL_FAIL=$((PULL_FAIL + 1))
+        fi
+    done < <(read_repos "$proj")
+done < <(read_projects)
+
+echo "  Pulled: $PULL_SUCCESS repos, Failed: $PULL_FAIL repos"
+
+# --- Step 7: Install Crontab ---
+echo "[6/7] Installing crontab..."
+
+# Read existing crontab, stripping everything between our marker comments
+EXISTING_CRON=$(crontab -l 2>/dev/null | sed '/^# --- Zapat/,/^# --- End Zapat/d' || true)
+
+# Build new crontab
+NEW_CRON="${EXISTING_CRON}
+# --- Zapat (managed by startup.sh) ---
+# Daily standup Mon-Fri 8 AM
+0 8 * * 1-5 ${SCRIPT_DIR}/jobs/daily-standup.sh >> ${SCRIPT_DIR}/logs/cron-daily.log 2>&1
+# Weekly planning Monday 9 AM
+0 9 * * 1 ${SCRIPT_DIR}/jobs/weekly-planning.sh >> ${SCRIPT_DIR}/logs/cron-weekly.log 2>&1
+# Monthly strategy 1st of month 10 AM
+0 10 1 * * ${SCRIPT_DIR}/jobs/monthly-strategy.sh >> ${SCRIPT_DIR}/logs/cron-monthly.log 2>&1
+# GitHub polling (configurable via POLL_INTERVAL_MINUTES, default 2)
+*/${POLL_INTERVAL_MINUTES:-2} * * * * ${SCRIPT_DIR}/bin/poll-github.sh >> ${SCRIPT_DIR}/logs/cron-poll.log 2>&1
+# Weekly security scan Sunday 6 AM
+0 6 * * 0 ${SCRIPT_DIR}/bin/run-agent.sh --job-name weekly-security-scan --prompt-file ${SCRIPT_DIR}/prompts/weekly-security-scan.txt --budget \${MAX_BUDGET_SECURITY_SCAN:-15} --allowed-tools Read,Glob,Grep,Bash --timeout 1800 --notify slack >> ${SCRIPT_DIR}/logs/cron-security.log 2>&1
+# Daily health digest at 8:05 AM
+5 8 * * * cd ${SCRIPT_DIR} && node bin/zapat status --slack >> ${SCRIPT_DIR}/logs/cron-digest.log 2>&1
+# Log rotation weekly Sunday 3 AM
+0 3 * * 0 cd ${SCRIPT_DIR} && node bin/zapat logs rotate >> ${SCRIPT_DIR}/logs/cron-rotation.log 2>&1
+# Health check every 30 minutes with auto-fix
+*/30 * * * * cd ${SCRIPT_DIR} && node bin/zapat health --auto-fix >> ${SCRIPT_DIR}/logs/cron-health.log 2>&1
+# --- End Zapat ---"
+
+echo "$NEW_CRON" | crontab -
+log_info "Crontab installed (8 entries)"
+
+# --- Step 8: Dashboard Server ---
+echo "[7/8] Starting dashboard server..."
+DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
+DASHBOARD_DIR="${SCRIPT_DIR}/dashboard"
+DASHBOARD_PID_FILE="${SCRIPT_DIR}/state/dashboard.pid"
+DASHBOARD_LOG="${SCRIPT_DIR}/logs/dashboard.log"
+
+# Kill any existing dashboard server
+if [[ -f "$DASHBOARD_PID_FILE" ]]; then
+    OLD_PID=$(cat "$DASHBOARD_PID_FILE" 2>/dev/null)
+    if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+    fi
+    rm -f "$DASHBOARD_PID_FILE"
+fi
+if lsof -ti:"${DASHBOARD_PORT}" &>/dev/null; then
+    kill "$(lsof -ti:"${DASHBOARD_PORT}")" 2>/dev/null || true
+    sleep 1
+fi
+
+# Start dashboard as a background process
+if [[ -d "$DASHBOARD_DIR/.next" ]]; then
+    cd "$DASHBOARD_DIR"
+    AUTOMATION_DIR="$SCRIPT_DIR" nohup npx next start -H 0.0.0.0 -p "$DASHBOARD_PORT" \
+        >> "$DASHBOARD_LOG" 2>&1 &
+    echo $! > "$DASHBOARD_PID_FILE"
+    cd "$SCRIPT_DIR"
+    log_info "Dashboard server started on port ${DASHBOARD_PORT} (PID: $(cat "$DASHBOARD_PID_FILE"))"
+else
+    log_warn "Dashboard not built yet — run: cd $DASHBOARD_DIR && npm run build"
+fi
+
+# --- Step 9: State Files ---
+echo "[8/8] Initializing state files..."
+mkdir -p "$SCRIPT_DIR/state"
+mkdir -p "$SCRIPT_DIR/state/items"
+touch "$SCRIPT_DIR/state/processed-prs.txt"
+touch "$SCRIPT_DIR/state/processed-issues.txt"
+touch "$SCRIPT_DIR/state/processed-work.txt"
+touch "$SCRIPT_DIR/state/processed-rework.txt"
+touch "$SCRIPT_DIR/state/processed-write-tests.txt"
+touch "$SCRIPT_DIR/state/processed-research.txt"
+log_info "State files ready"
+
+# --- Notify ---
+if [[ -n "${SLACK_WEBHOOK_URL:-}" && "$SLACK_WEBHOOK_URL" != *"YOUR"* ]]; then
+    "$SCRIPT_DIR/bin/notify.sh" \
+        --slack \
+        --message "Agent automation started on $(hostname) at $(date '+%Y-%m-%d %H:%M:%S'). All systems operational. Repos pulled: $PULL_SUCCESS, Cron jobs: 8." \
+        --job-name "startup" \
+        --status success || log_warn "Slack notification failed (webhook may not be configured yet)"
+fi
+
+# --- Summary ---
+echo ""
+echo "============================================"
+echo "  Startup Complete"
+echo "============================================"
+echo ""
+echo "  tmux session:  zapat"
+echo "  Repos pulled:  $PULL_SUCCESS / $((PULL_SUCCESS + PULL_FAIL))"
+echo "  Cron jobs:     8 installed"
+echo "  Dashboard:     http://$(hostname):${DASHBOARD_PORT:-8080}"
+echo "  State files:   initialized"
+echo ""
+echo "  Verify cron:   crontab -l"
+echo "  View logs:     ls ${SCRIPT_DIR}/logs/"
+echo "  Manual test:   ${SCRIPT_DIR}/jobs/daily-standup.sh"
+echo ""
+echo "  To attach to tmux: tmux attach -t zapat"
+echo ""
