@@ -338,6 +338,8 @@ const statusLabels = [
 const claudeMd = readFile('CLAUDE.md');
 const readmeMd = readFile('README.md');
 
+const introMd = fileExists('docs/INTRODUCTION.md') ? readFile('docs/INTRODUCTION.md') : null;
+
 for (const label of userFacingLabels) {
   check(`CLAUDE.md documents user label "${label}"`,
     claudeMd.includes(`\`${label}\``),
@@ -345,6 +347,11 @@ for (const label of userFacingLabels) {
   check(`README.md documents user label "${label}"`,
     readmeMd.includes(`\`${label}\``),
     `Label "${label}" missing from README.md labels table`);
+  if (introMd) {
+    check(`INTRODUCTION.md documents user label "${label}"`,
+      introMd.includes(`\`${label}\``),
+      `Label "${label}" missing from docs/INTRODUCTION.md labels table`);
+  }
 }
 
 for (const label of statusLabels) {
