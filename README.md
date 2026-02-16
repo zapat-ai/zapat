@@ -69,6 +69,23 @@ The `/zapat` skill walks you through the same setup process from inside the clon
 
 Runs on any always-on macOS or Linux machine.
 
+## Important: Resource & Cost Considerations
+
+Zapat runs multiple Claude Code agents concurrently -- a single pipeline job can spin up 4+ agents working in parallel. Before deploying, understand what this means for your setup:
+
+**Compute:** Each Claude Code agent is a separate process. When several jobs run simultaneously (e.g., one issue being implemented while another is being reviewed), your machine may have 8-12+ agents active at once. This will saturate CPU and memory on a laptop or shared workstation. **We strongly recommend running Zapat on a dedicated machine** -- a Mac Mini, a Linux server, or a cloud instance that isn't used for your daily work.
+
+**API usage:** Every agent call uses Claude tokens. A typical issue-to-merge pipeline (triage + implement + review + test) consumes significant token volume.
+
+- **Claude Code subscription (Max/Team/Enterprise):** You get a usage quota rather than per-token billing. Monitor your usage patterns in your account dashboard to ensure you stay within your plan's limits. Zapat's concurrent agents can consume quota quickly.
+- **Anthropic API (pay-per-token):** Set spending limits in your [Anthropic Console](https://console.anthropic.com/) to avoid surprises.
+
+Either way:
+- Use `CLAUDE_MODEL` in `.env` or per-project `project.env` to choose cost-appropriate models (e.g., Sonnet for routine work, Opus for complex reasoning)
+- Adjust `MAX_CONCURRENT_WORK` in `.env` to limit how many jobs run simultaneously
+
+**Rate limits:** The poller makes GitHub API calls every 2 minutes across all configured repos. With many repos or rapid labeling, you may hit GitHub's rate limit (5,000 requests/hour for authenticated users). The poller detects this and backs off automatically, but be mindful of your usage.
+
 ## How It Works
 
 1. **You** add the `agent` label to a GitHub issue. That's your only job.
