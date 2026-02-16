@@ -1,0 +1,15 @@
+# Zapat Issue Template — Human Only
+# Copy to .github/ISSUE_TEMPLATE/human-only.yml in your repo.
+# The "human-only" label tells Zapat to skip this issue entirely.
+
+name: Human Only
+description: Create an issue that Zapat should not touch
+labels: ["human-only"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the issue. Zapat will not triage or act on this.
+    validations:
+      required: true

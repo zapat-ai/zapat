@@ -88,21 +88,22 @@ function readMetrics(opts: { days?: number } = {}): MetricEntry[] {
   return entries
 }
 
-function classifyPrStage(labels: string[]): string {
-  if (labels.includes('zapat-rework')) return 'rework'
-  if (labels.includes('zapat-review')) return 'review'
-  return 'in-progress'
+function classifyPrStage(labels: string[]): { stage: string; subStage: string } {
+  if (labels.includes('zapat-rework')) return { stage: 'review', subStage: 'rework' }
+  if (labels.includes('zapat-testing')) return { stage: 'review', subStage: 'testing' }
+  if (labels.includes('zapat-review')) return { stage: 'review', subStage: 'in review' }
+  return { stage: 'review', subStage: 'pr open' }
 }
 
-function classifyIssueStage(labels: string[]): string {
-  if (labels.includes('zapat-implementing')) return 'in-progress'
-  if (labels.includes('zapat-researching')) return 'in-progress'
-  if (labels.includes('zapat-triaging')) return 'triaging'
-  if (labels.includes('triaged')) return 'triaged'
-  if (labels.includes('agent-work')) return 'in-progress'
-  if (labels.includes('agent-research')) return 'research'
-  if (labels.includes('agent')) return 'triaged'
-  return 'new'
+function classifyIssueStage(labels: string[]): { stage: string; subStage: string } {
+  if (labels.includes('zapat-implementing')) return { stage: 'working', subStage: 'implementing' }
+  if (labels.includes('zapat-researching')) return { stage: 'working', subStage: 'researching' }
+  if (labels.includes('zapat-triaging')) return { stage: 'queued', subStage: 'triaging' }
+  if (labels.includes('triaged')) return { stage: 'queued', subStage: 'triaged' }
+  if (labels.includes('agent-work')) return { stage: 'queued', subStage: 'queued' }
+  if (labels.includes('agent-research')) return { stage: 'queued', subStage: 'research' }
+  if (labels.includes('agent')) return { stage: 'queued', subStage: 'new' }
+  return { stage: 'queued', subStage: 'new' }
 }
 
 export function getActiveItems(): PipelineItem[] {
@@ -122,6 +123,7 @@ export function getActiveItems(): PipelineItem[] {
               ['zapat-review', 'agent-work', 'zapat-rework', 'agent', 'zapat-implementing', 'zapat-testing', 'zapat-triaging'].includes(l),
             )
           ) {
+            const { stage, subStage } = classifyPrStage(labelNames)
             items.push({
               type: 'pr',
               repo,
@@ -129,7 +131,8 @@ export function getActiveItems(): PipelineItem[] {
               title: pr.title,
               labels: labelNames,
               url: pr.url,
-              stage: classifyPrStage(labelNames),
+              stage,
+              subStage,
               createdAt: pr.createdAt,
             })
           }
@@ -151,6 +154,7 @@ export function getActiveItems(): PipelineItem[] {
               ['agent', 'agent-work', 'agent-research', 'triaged', 'zapat-triaging', 'zapat-researching', 'zapat-implementing'].includes(l),
             )
           ) {
+            const { stage, subStage } = classifyIssueStage(labelNames)
             items.push({
               type: 'issue',
               repo,
@@ -158,7 +162,8 @@ export function getActiveItems(): PipelineItem[] {
               title: issue.title,
               labels: labelNames,
               url: issue.url,
-              stage: classifyIssueStage(labelNames),
+              stage,
+              subStage,
               createdAt: issue.createdAt,
             })
           }
@@ -191,7 +196,8 @@ export function getCompletedItems(): PipelineItem[] {
             title: pr.title,
             labels: [],
             url: pr.url,
-            stage: 'completed',
+            stage: 'done',
+            subStage: 'merged',
             completedAt: pr.mergedAt,
           })
         }
@@ -216,7 +222,8 @@ export function getCompletedItems(): PipelineItem[] {
             title: issue.title,
             labels: labelNames,
             url: issue.url,
-            stage: 'completed',
+            stage: 'done',
+            subStage: 'closed',
             completedAt: issue.closedAt,
           })
         }
@@ -338,7 +345,7 @@ export function getHealthChecks(): HealthCheck[] {
   }
 
   // Check orphaned worktrees
-  const worktreeDir = '/tmp/agent-worktrees'
+  const worktreeDir = join(getAutomationDir(), 'worktrees')
   if (existsSync(worktreeDir)) {
     try {
       const entries = readdirSync(worktreeDir)

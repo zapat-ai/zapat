@@ -13,7 +13,7 @@ export function KanbanBoard({
 }) {
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stages.map((stage) => (
           <div key={stage.id} className="rounded-lg bg-zinc-100 p-3 dark:bg-zinc-800/30">
             <Skeleton className="mb-3 h-4 w-20" />
@@ -28,7 +28,7 @@ export function KanbanBoard({
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       {stages.map((stage) => (
         <KanbanColumn
           key={stage.id}

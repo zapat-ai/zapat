@@ -1,0 +1,56 @@
+# Zapat Auto-Label — GitHub Action
+#
+# Automatically labels new issues with "agent" so Zapat triages them.
+# Copy this file to .github/workflows/zapat-auto-label.yml in each repo
+# that Zapat manages.
+#
+# This acts as a webhook bridge: GitHub fires this Action instantly when
+# an issue is created, and the label makes Zapat pick it up on the next
+# poll cycle (within 2 minutes).
+#
+# To exclude issues from Zapat, add the "human-only" label manually or
+# assign someone to the issue.
+
+name: Zapat Auto-Label
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    # Skip if issue was created by Zapat itself (prevent loops)
+    if: github.actor != 'zapat-bot'
+    permissions:
+      issues: write
+    steps:
+      - name: Add agent label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Skip if the issue already has a Zapat label
+            const zapatLabels = [
+              'agent', 'agent-work', 'agent-research',
+              'agent-write-tests', 'human-only'
+            ];
+            const issueLabels = context.payload.issue.labels.map(l => l.name);
+            const hasZapatLabel = issueLabels.some(l => zapatLabels.includes(l));
+            if (hasZapatLabel) {
+              console.log('Issue already has a Zapat label, skipping.');
+              return;
+            }
+
+            // Skip if the issue has an assignee
+            if (context.payload.issue.assignees.length > 0) {
+              console.log('Issue has assignees, skipping.');
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['agent']
+            });
+            console.log(`Added "agent" label to issue #${context.issue.number}`);

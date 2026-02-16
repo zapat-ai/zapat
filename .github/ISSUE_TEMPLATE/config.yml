@@ -1,0 +1,10 @@
+# Zapat Issue Template Config
+# Copy to .github/ISSUE_TEMPLATE/config.yml in your repo.
+# This disables blank issues so users always pick a template
+# (and therefore always get the right label applied).
+
+blank_issues_enabled: false
+contact_links:
+  - name: Ask Zapat directly
+    url: https://github.com/your-org/your-repo/issues
+    about: Comment "@zapat <instruction>" on any existing issue or PR

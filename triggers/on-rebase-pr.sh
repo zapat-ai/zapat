@@ -59,9 +59,9 @@ fi
 
 # --- Create Temporary Worktree for Rebase ---
 if [[ "$PROJECT_SLUG" != "default" ]]; then
-    WORKTREE_DIR="/tmp/agent-worktrees/${PROJECT_SLUG}--${REPO##*/}--rebase-pr-${PR_NUMBER}"
+    WORKTREE_DIR="${ZAPAT_HOME:-$HOME/.zapat}/worktrees/${PROJECT_SLUG}--${REPO##*/}--rebase-pr-${PR_NUMBER}"
 else
-    WORKTREE_DIR="/tmp/agent-worktrees/${REPO##*/}-rebase-pr-${PR_NUMBER}"
+    WORKTREE_DIR="${ZAPAT_HOME:-$HOME/.zapat}/worktrees/${REPO##*/}-rebase-pr-${PR_NUMBER}"
 fi
 
 # Clean up any leftover worktree
@@ -77,7 +77,7 @@ git fetch origin "$PR_BRANCH" "$BASE_BRANCH" 2>/dev/null || {
     exit 1
 }
 
-mkdir -p /tmp/agent-worktrees
+mkdir -p ${ZAPAT_HOME:-$HOME/.zapat}/worktrees
 git worktree add "$WORKTREE_DIR" "origin/${PR_BRANCH}" 2>/dev/null || {
     git worktree add "$WORKTREE_DIR" "$PR_BRANCH" 2>/dev/null || {
         log_error "Failed to create worktree for branch $PR_BRANCH"

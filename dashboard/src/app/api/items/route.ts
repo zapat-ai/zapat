@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getActiveItems } from '@/lib/data'
+import { getActiveItems, getCompletedItems } from '@/lib/data'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const items = getActiveItems()
-    return NextResponse.json({ items })
+    const active = getActiveItems()
+    const completed = getCompletedItems().slice(0, 5)
+    return NextResponse.json({ items: [...active, ...completed] })
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || 'Failed to fetch items' },

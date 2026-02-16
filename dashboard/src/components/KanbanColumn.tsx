@@ -5,9 +5,8 @@ import type { PipelineItem } from '@/lib/types'
 const headerColors: Record<string, string> = {
   blue: 'text-blue-600 dark:text-blue-400',
   yellow: 'text-amber-600 dark:text-amber-400',
-  purple: 'text-purple-600 dark:text-purple-400',
   cyan: 'text-cyan-600 dark:text-cyan-400',
-  red: 'text-red-600 dark:text-red-400',
+  green: 'text-emerald-600 dark:text-emerald-400',
 }
 
 export function KanbanColumn({
@@ -45,7 +44,7 @@ export function KanbanColumn({
               title={item.title}
               repo={item.repo}
               url={item.url}
-              labels={item.labels}
+              subStage={item.subStage}
               stage={stageId}
             />
           ))

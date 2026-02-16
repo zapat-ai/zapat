@@ -172,7 +172,7 @@ function checkStaleSlots(autoFix) {
 }
 
 function checkOrphanedWorktrees(autoFix) {
-  const worktreeDir = '/tmp/agent-worktrees';
+  const worktreeDir = join(getAutomationDir(), 'worktrees');
   if (!existsSync(worktreeDir)) {
     return { name: 'orphaned-worktrees', status: 'ok', message: 'No worktree directory' };
   }

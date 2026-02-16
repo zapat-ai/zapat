@@ -76,9 +76,9 @@ fi
 SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | head -c 40)
 BRANCH_NAME="agent/issue-${ISSUE_NUMBER}-${SLUG}"
 if [[ "$PROJECT_SLUG" != "default" ]]; then
-    WORKTREE_DIR="/tmp/agent-worktrees/${PROJECT_SLUG}--${REPO##*/}--${ISSUE_NUMBER}"
+    WORKTREE_DIR="${ZAPAT_HOME:-$HOME/.zapat}/worktrees/${PROJECT_SLUG}--${REPO##*/}--${ISSUE_NUMBER}"
 else
-    WORKTREE_DIR="/tmp/agent-worktrees/${REPO##*/}-${ISSUE_NUMBER}"
+    WORKTREE_DIR="${ZAPAT_HOME:-$HOME/.zapat}/worktrees/${REPO##*/}-${ISSUE_NUMBER}"
 fi
 
 # Clean up any leftover worktree from a previous failed run
@@ -109,11 +109,12 @@ if [[ -z "${BASE_BRANCH:-}" ]]; then
     BASE_BRANCH="${BASE_BRANCH:-main}"
 fi
 
-mkdir -p /tmp/agent-worktrees
+mkdir -p ${ZAPAT_HOME:-$HOME/.zapat}/worktrees
 git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "origin/${BASE_BRANCH}" 2>/dev/null || {
-    # Branch may already exist from a previous attempt
-    log_warn "Branch $BRANCH_NAME may already exist, trying checkout"
-    git worktree add "$WORKTREE_DIR" "$BRANCH_NAME" 2>/dev/null || {
+    # Branch may already exist from a previous attempt — delete and recreate
+    log_warn "Branch $BRANCH_NAME may already exist, resetting it"
+    git branch -D "$BRANCH_NAME" 2>/dev/null || true
+    git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "origin/${BASE_BRANCH}" 2>/dev/null || {
         log_error "Failed to create worktree for $BRANCH_NAME"
         "$SCRIPT_DIR/bin/notify.sh" \
             --slack \

@@ -23,6 +23,7 @@ export interface PipelineItem {
   labels: string[]
   url: string
   stage: string
+  subStage?: string
   createdAt?: string
   completedAt?: string
 }

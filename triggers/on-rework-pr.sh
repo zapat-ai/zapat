@@ -96,9 +96,9 @@ fi
 
 # --- Create Git Worktree from Existing Branch ---
 if [[ "$PROJECT_SLUG" != "default" ]]; then
-    WORKTREE_DIR="/tmp/agent-worktrees/${PROJECT_SLUG}--${REPO##*/}--pr-${PR_NUMBER}"
+    WORKTREE_DIR="${ZAPAT_HOME:-$HOME/.zapat}/worktrees/${PROJECT_SLUG}--${REPO##*/}--pr-${PR_NUMBER}"
 else
-    WORKTREE_DIR="/tmp/agent-worktrees/${REPO##*/}-pr-${PR_NUMBER}"
+    WORKTREE_DIR="${ZAPAT_HOME:-$HOME/.zapat}/worktrees/${REPO##*/}-pr-${PR_NUMBER}"
 fi
 
 # Clean up any leftover worktree
@@ -111,7 +111,7 @@ fi
 cd "$REPO_PATH"
 git fetch origin "$PR_BRANCH" 2>/dev/null || true
 
-mkdir -p /tmp/agent-worktrees
+mkdir -p ${ZAPAT_HOME:-$HOME/.zapat}/worktrees
 git worktree add "$WORKTREE_DIR" "origin/${PR_BRANCH}" 2>/dev/null || {
     # Try with local branch
     git worktree add "$WORKTREE_DIR" "$PR_BRANCH" 2>/dev/null || {
