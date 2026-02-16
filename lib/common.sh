@@ -446,6 +446,9 @@ release_slot() {
 
 cleanup_on_exit() {
     local lock_file="${1:-}"
+    local item_state_file="${2:-}"
+    local exit_code="${3:-0}"
+
     if [[ -n "$lock_file" ]]; then
         # Check if it's a slot file or a lock file
         if [[ "$lock_file" == *"/slot-"* ]]; then
@@ -454,6 +457,11 @@ cleanup_on_exit() {
             # Lock files now use .d directories
             [[ -d "${lock_file}.d" ]] && release_lock "$lock_file"
         fi
+    fi
+
+    # Update item state on failure (non-zero exit)
+    if [[ -n "$item_state_file" && -f "$item_state_file" && "$exit_code" -ne 0 ]]; then
+        update_item_state "$item_state_file" "failed" "Trigger exited with code $exit_code"
     fi
 }
 

@@ -25,6 +25,9 @@ PROJECT_SLUG="${4:-${CURRENT_PROJECT:-default}}"
 # Activate project context (loads project.env overrides)
 set_project "$PROJECT_SLUG"
 
+ITEM_STATE_FILE=$(create_item_state "$REPO" "pr" "$PR_NUMBER" "running" "$PROJECT_SLUG") || true
+trap 'cleanup_on_exit "" "$ITEM_STATE_FILE" $?' EXIT
+
 log_info "Reviewing PR #${PR_NUMBER} in ${REPO} (project: $PROJECT_SLUG)"
 
 # --- Add status label ---
@@ -118,5 +121,8 @@ gh pr edit "$PR_NUMBER" --repo "$REPO" \
     --message "Review team completed analysis of PR #${PR_NUMBER}: ${PR_TITLE}\nhttps://github.com/${REPO}/pull/${PR_NUMBER}" \
     --job-name "pr-review" \
     --status success || log_warn "Slack notification failed"
+
+# --- Update Item State ---
+[[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "completed"
 
 log_info "Review complete for PR #${PR_NUMBER}"

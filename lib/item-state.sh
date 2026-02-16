@@ -140,8 +140,21 @@ should_process_item() {
         return 1
     fi
 
-    # Skip if still running
+    # Skip if still running (unless stuck for over STALE_RUNNING_MINUTES)
     if [[ "$status" == "running" ]]; then
+        local stale_minutes="${STALE_RUNNING_MINUTES:-45}"
+        local updated_at now_epoch updated_epoch elapsed_minutes
+        updated_at=$(jq -r '.updated_at' "$state_file" 2>/dev/null)
+        now_epoch=$(date -u '+%s')
+        updated_epoch=$(date -u -jf '%Y-%m-%dT%H:%M:%SZ' "$updated_at" '+%s' 2>/dev/null || \
+            date -u -d "$updated_at" '+%s' 2>/dev/null || echo "0")
+        elapsed_minutes=$(( (now_epoch - updated_epoch) / 60 ))
+
+        if [[ $elapsed_minutes -gt $stale_minutes ]]; then
+            log_warn "Detected stale running item (${elapsed_minutes}m > ${stale_minutes}m threshold): $(basename "$state_file")"
+            update_item_state "$state_file" "failed" "Stale: stuck in running state for ${elapsed_minutes}m"
+            return 0  # Now eligible for retry
+        fi
         return 1
     fi
 

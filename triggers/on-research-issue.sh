@@ -35,11 +35,13 @@ gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
 # --- Concurrency Slot ---
 SLOT_DIR="$SCRIPT_DIR/state/agent-work-slots"
 MAX_CONCURRENT=${MAX_CONCURRENT_WORK:-10}
+ITEM_STATE_FILE=$(create_item_state "$REPO" "research" "$ISSUE_NUMBER" "running" "$PROJECT_SLUG") || true
 if ! acquire_slot "$SLOT_DIR" "$MAX_CONCURRENT"; then
     log_info "At capacity ($MAX_CONCURRENT concurrent sessions), skipping research issue #${ISSUE_NUMBER}"
+    [[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "capacity_rejected"
     exit 0
 fi
-trap 'cleanup_on_exit "$SLOT_FILE"' EXIT
+trap 'cleanup_on_exit "$SLOT_FILE" "$ITEM_STATE_FILE" $?' EXIT
 
 # --- Fetch Issue Details ---
 ISSUE_JSON=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" \
@@ -112,5 +114,8 @@ _log_structured "info" "Research completed for issue #${ISSUE_NUMBER} in ${REPO}
     --message "Research completed for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}\nhttps://github.com/${REPO}/issues/${ISSUE_NUMBER}" \
     --job-name "agent-research" \
     --status success || log_warn "Slack notification failed"
+
+# --- Update Item State ---
+[[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "completed"
 
 log_info "Research complete for issue #${ISSUE_NUMBER}"

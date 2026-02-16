@@ -24,6 +24,9 @@ PROJECT_SLUG="${4:-${CURRENT_PROJECT:-default}}"
 # Activate project context (loads project.env overrides)
 set_project "$PROJECT_SLUG"
 
+ITEM_STATE_FILE=$(create_item_state "$REPO" "rebase" "$PR_NUMBER" "running" "$PROJECT_SLUG") || true
+trap 'cleanup_on_exit "" "$ITEM_STATE_FILE" $?' EXIT
+
 log_info "Rebasing PR #${PR_NUMBER} in ${REPO} (project: $PROJECT_SLUG)"
 
 # --- Fetch PR Details ---
@@ -178,5 +181,8 @@ cd "$REPO_PATH"
 git worktree remove "$WORKTREE_DIR" --force 2>/dev/null || {
     log_warn "Failed to remove worktree at $WORKTREE_DIR, will clean up later"
 }
+
+# --- Update Item State ---
+[[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "completed"
 
 log_info "Auto-rebase complete for PR #${PR_NUMBER}"

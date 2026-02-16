@@ -30,11 +30,13 @@ log_info "Starting rework for PR #${PR_NUMBER} in ${REPO} (project: $PROJECT_SLU
 # --- Concurrency Slot (shares slots with agent-work) ---
 SLOT_DIR="$SCRIPT_DIR/state/agent-work-slots"
 MAX_CONCURRENT=${MAX_CONCURRENT_WORK:-10}
+ITEM_STATE_FILE=$(create_item_state "$REPO" "rework" "$PR_NUMBER" "running" "$PROJECT_SLUG") || true
 if ! acquire_slot "$SLOT_DIR" "$MAX_CONCURRENT"; then
     log_info "At capacity ($MAX_CONCURRENT concurrent sessions), skipping rework PR #${PR_NUMBER}"
+    [[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "capacity_rejected"
     exit 0
 fi
-trap 'cleanup_on_exit "$SLOT_FILE"' EXIT
+trap 'cleanup_on_exit "$SLOT_FILE" "$ITEM_STATE_FILE" $?' EXIT
 
 # --- Fetch PR Details ---
 PR_JSON=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
@@ -177,5 +179,8 @@ cd "$REPO_PATH"
 git worktree remove "$WORKTREE_DIR" --force 2>/dev/null || {
     log_warn "Failed to remove worktree at $WORKTREE_DIR, will clean up later"
 }
+
+# --- Update Item State ---
+[[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "completed"
 
 log_info "Agent-rework complete for PR #${PR_NUMBER}"

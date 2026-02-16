@@ -25,6 +25,9 @@ PROJECT_SLUG="${4:-${CURRENT_PROJECT:-default}}"
 # Activate project context (loads project.env overrides)
 set_project "$PROJECT_SLUG"
 
+ITEM_STATE_FILE=$(create_item_state "$REPO" "issue" "$ISSUE_NUMBER" "running" "$PROJECT_SLUG") || true
+trap 'cleanup_on_exit "" "$ITEM_STATE_FILE" $?' EXIT
+
 log_info "Triaging issue #${ISSUE_NUMBER} in ${REPO} (project: $PROJECT_SLUG)"
 
 # --- Add status label ---
@@ -139,5 +142,8 @@ fi
     --message "Triage completed for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}\n${TRIAGE_DETAILS}\nhttps://github.com/${REPO}/issues/${ISSUE_NUMBER}" \
     --job-name "issue-triage" \
     --status "$TRIAGE_STATUS" || log_warn "Slack notification failed"
+
+# --- Update Item State ---
+[[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "completed"
 
 log_info "Triage complete for issue #${ISSUE_NUMBER} — ${TRIAGE_DETAILS}"
