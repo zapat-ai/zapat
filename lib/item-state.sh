@@ -100,7 +100,7 @@ update_item_state() {
             # Account-level rate limit: configurable delay, does NOT count toward attempt limit
             local retry_minutes="${RATE_LIMIT_RETRY_MINUTES:-60}"
             local retry_time
-            retry_time=$(date -u -v+${retry_minutes}M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
+            retry_time=$(date -u -v+"${retry_minutes}"M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
                 date -u -d "+${retry_minutes} minutes" '+%Y-%m-%dT%H:%M:%SZ')
             updates="$updates | .status = \"pending\" | .next_retry_after = \"$retry_time\""
             updates="$updates | .last_error = \"Account rate limit hit\""
