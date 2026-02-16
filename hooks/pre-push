@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "Running consistency tests..."
+node tests/check-consistency.mjs
