@@ -8,7 +8,7 @@ TMUX_SESSION="${TMUX_SESSION:-zapat}"
 # Patterns for detecting stuck panes
 PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
 PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
-PANE_PATTERN_PERMISSION="(Allow|Deny|permission|Do you want to|approve this)"
+PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|wants to use the .* tool|approve this action)"
 PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
 
 # Wait for specific content to appear in a tmux pane
@@ -286,6 +286,12 @@ monitor_session() {
 
     # Clean up any stale signal file from a previous run
     rm -f "$signal_file"
+
+    # Clean up stale throttle files older than 10 minutes from previous sessions
+    local throttle_dir="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-health-throttle"
+    if [[ -d "$throttle_dir" ]]; then
+        find "$throttle_dir" -type f -mmin +10 -delete 2>/dev/null || true
+    fi
 
     log_info "Monitoring session '$window' (timeout: ${timeout}s)"
 
