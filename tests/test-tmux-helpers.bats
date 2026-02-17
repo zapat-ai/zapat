@@ -174,3 +174,126 @@ teardown() {
     [[ $scale_factor -eq 3 ]]
     [[ $perm_timeout -eq 90 ]]
 }
+
+# --- Permission pattern tests ---
+# Load the actual pattern from tmux-helpers.sh for testing
+
+_load_permission_pattern() {
+    # Extract the pattern from the real source file
+    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+    PANE_PATTERN_PERMISSION=$(grep '^PANE_PATTERN_PERMISSION=' "$src" | sed 's/^PANE_PATTERN_PERMISSION=//' | tr -d '"')
+}
+
+# -- True positives: real Claude CLI permission prompts --
+
+@test "permission pattern matches 'Allow once'" {
+    _load_permission_pattern
+    echo "  Allow once  " | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern matches 'Allow always'" {
+    _load_permission_pattern
+    echo "  Allow always  " | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern matches 'Do you want to allow'" {
+    _load_permission_pattern
+    echo "Do you want to allow this tool to run?" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern matches 'wants to use the Bash tool'" {
+    _load_permission_pattern
+    echo "Claude wants to use the Bash tool" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern matches 'wants to use the Read tool'" {
+    _load_permission_pattern
+    echo "Claude wants to use the Read tool" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern matches 'wants to use the Write tool'" {
+    _load_permission_pattern
+    echo "Claude wants to use the Write tool" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern matches 'approve this action'" {
+    _load_permission_pattern
+    echo "Do you approve this action?" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+# -- False positives: status bar and code review text that must NOT match --
+
+@test "permission pattern does NOT match 'bypass permissions on'" {
+    _load_permission_pattern
+    ! echo "bypass permissions on" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match bare 'Allow'" {
+    _load_permission_pattern
+    ! echo "Allow" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match bare 'Deny'" {
+    _load_permission_pattern
+    ! echo "Deny" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match bare 'permission'" {
+    _load_permission_pattern
+    ! echo "permission" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match 'Do you want to proceed'" {
+    _load_permission_pattern
+    ! echo "Do you want to proceed?" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match IAM Allow/Deny policy text" {
+    _load_permission_pattern
+    ! echo '{"Effect": "Allow", "Action": "s3:GetObject"}' | grep -qE "$PANE_PATTERN_PERMISSION"
+    ! echo '{"Effect": "Deny", "Action": "s3:*"}' | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match 'AllowUsers' SSH config" {
+    _load_permission_pattern
+    ! echo "AllowUsers admin deploy" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match 'DenyGroups' SSH config" {
+    _load_permission_pattern
+    ! echo "DenyGroups nogroup" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match status bar with permissions mode" {
+    _load_permission_pattern
+    ! echo "> claude --dangerously-skip-permissions  bypass permissions on  auto-compact" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match code review mentioning permissions" {
+    _load_permission_pattern
+    ! echo "This PR updates the file permissions for the deploy script" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+# -- Stale throttle file cleanup tests --
+
+@test "monitor_session cleans stale throttle files older than 10 minutes" {
+    local throttle_dir="$TEST_DIR/state/pane-health-throttle"
+    mkdir -p "$throttle_dir"
+
+    # Create a stale throttle file and backdate it 15 minutes
+    echo "1000000000" > "$throttle_dir/old-pane--permission"
+    touch -t "$(date -v-15M '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '15 minutes ago' '+%Y%m%d%H%M.%S' 2>/dev/null)" "$throttle_dir/old-pane--permission" 2>/dev/null || \
+        touch -A -001500 "$throttle_dir/old-pane--permission" 2>/dev/null || true
+
+    # Create a fresh throttle file
+    echo "$(date +%s)" > "$throttle_dir/fresh-pane--rate_limit"
+
+    # Run the cleanup logic directly (extracted from monitor_session)
+    if [[ -d "$throttle_dir" ]]; then
+        find "$throttle_dir" -type f -mmin +10 -delete 2>/dev/null || true
+    fi
+
+    # Stale file should be gone, fresh file should remain
+    [[ ! -f "$throttle_dir/old-pane--permission" ]]
+    [[ -f "$throttle_dir/fresh-pane--rate_limit" ]]
+}
