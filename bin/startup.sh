@@ -76,7 +76,7 @@ if ! validate_no_repo_overlap; then
 fi
 
 # --- Step 2: tmux Session ---
-echo "[1/7] Setting up tmux session..."
+echo "[1/9] Setting up tmux session..."
 if tmux has-session -t zapat 2>/dev/null; then
     log_info "tmux session 'zapat' already exists"
 else
@@ -85,7 +85,7 @@ else
 fi
 
 # --- Step 3: Keychain (macOS only) ---
-echo "[2/7] Unlocking keychain..."
+echo "[2/9] Unlocking keychain..."
 if [[ "$(detect_os)" == "macos" ]]; then
     if security unlock-keychain ~/Library/Keychains/login.keychain-db 2>/dev/null; then
         log_info "Keychain unlocked"
@@ -97,7 +97,7 @@ else
 fi
 
 # --- Step 4: Verify gh CLI ---
-echo "[3/7] Verifying GitHub CLI auth..."
+echo "[3/9] Verifying GitHub CLI auth..."
 if [[ -z "${GH_TOKEN:-}" ]]; then
     log_warn "GH_TOKEN not set in .env — gh CLI may not work in cron"
     echo "  Set GH_TOKEN in .env for reliable headless operation"
@@ -114,7 +114,7 @@ else
 fi
 
 # --- Step 5: Verify claude CLI ---
-echo "[4/7] Verifying claude CLI..."
+echo "[4/9] Verifying claude CLI..."
 if command -v claude &>/dev/null; then
     CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown")
     log_info "claude CLI found (version: $CLAUDE_VERSION)"
@@ -127,7 +127,7 @@ else
 fi
 
 # --- Step 5b: Clean up orphaned worktrees ---
-echo "[4b/7] Cleaning up orphaned worktrees..."
+echo "[4b/9] Cleaning up orphaned worktrees..."
 WORKTREE_CLEANED=0
 if [[ -d ${ZAPAT_HOME:-$HOME/.zapat}/worktrees ]]; then
     for wt in "${ZAPAT_HOME:-$HOME/.zapat}"/worktrees/*/; do
@@ -151,7 +151,7 @@ done < <(read_projects)
 log_info "Cleaned $WORKTREE_CLEANED orphaned worktrees"
 
 # --- Step 6: Pull repos ---
-echo "[5/7] Pulling latest code..."
+echo "[5/9] Pulling latest code..."
 PULL_SUCCESS=0
 PULL_FAIL=0
 
@@ -176,71 +176,11 @@ done < <(read_projects)
 
 echo "  Pulled: $PULL_SUCCESS repos, Failed: $PULL_FAIL repos"
 
-# --- Step 7: Install Crontab ---
-echo "[6/7] Installing crontab..."
-
-# Read existing crontab, stripping everything between our marker comments
-EXISTING_CRON=$(crontab -l 2>/dev/null | sed '/^# --- Zapat/,/^# --- End Zapat/d' || true)
-
-# Build new crontab
-NEW_CRON="${EXISTING_CRON}
-# --- Zapat (managed by startup.sh) ---
-# Daily standup Mon-Fri 8 AM
-0 8 * * 1-5 ${SCRIPT_DIR}/jobs/daily-standup.sh >> ${SCRIPT_DIR}/logs/cron-daily.log 2>&1
-# Weekly planning Monday 9 AM
-0 9 * * 1 ${SCRIPT_DIR}/jobs/weekly-planning.sh >> ${SCRIPT_DIR}/logs/cron-weekly.log 2>&1
-# Monthly strategy 1st of month 10 AM
-0 10 1 * * ${SCRIPT_DIR}/jobs/monthly-strategy.sh >> ${SCRIPT_DIR}/logs/cron-monthly.log 2>&1
-# GitHub polling (configurable via POLL_INTERVAL_MINUTES, default 2)
-*/${POLL_INTERVAL_MINUTES:-2} * * * * ${SCRIPT_DIR}/bin/poll-github.sh >> ${SCRIPT_DIR}/logs/cron-poll.log 2>&1
-# Weekly security scan Sunday 6 AM
-0 6 * * 0 ${SCRIPT_DIR}/bin/run-agent.sh --job-name weekly-security-scan --prompt-file ${SCRIPT_DIR}/prompts/weekly-security-scan.txt --budget \${MAX_BUDGET_SECURITY_SCAN:-15} --allowed-tools Read,Glob,Grep,Bash --timeout 1800 --notify slack >> ${SCRIPT_DIR}/logs/cron-security.log 2>&1
-# Daily health digest at 8:05 AM
-5 8 * * * cd ${SCRIPT_DIR} && node bin/zapat status --slack >> ${SCRIPT_DIR}/logs/cron-digest.log 2>&1
-# Log rotation weekly Sunday 3 AM
-0 3 * * 0 cd ${SCRIPT_DIR} && node bin/zapat logs rotate >> ${SCRIPT_DIR}/logs/cron-rotation.log 2>&1
-# Health check every 30 minutes with auto-fix
-*/30 * * * * cd ${SCRIPT_DIR} && node bin/zapat health --auto-fix >> ${SCRIPT_DIR}/logs/cron-health.log 2>&1
-# --- End Zapat ---"
-
-echo "$NEW_CRON" | crontab -
-log_info "Crontab installed (8 entries)"
-
-# --- Step 8: Dashboard Server ---
-echo "[7/8] Starting dashboard server..."
-DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
-DASHBOARD_DIR="${SCRIPT_DIR}/dashboard"
-DASHBOARD_PID_FILE="${SCRIPT_DIR}/state/dashboard.pid"
-DASHBOARD_LOG="${SCRIPT_DIR}/logs/dashboard.log"
-
-# Kill any existing dashboard server
-if [[ -f "$DASHBOARD_PID_FILE" ]]; then
-    OLD_PID=$(cat "$DASHBOARD_PID_FILE" 2>/dev/null)
-    if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
-        kill "$OLD_PID" 2>/dev/null || true
-        sleep 1
-    fi
-    rm -f "$DASHBOARD_PID_FILE"
-fi
-if lsof -ti:"${DASHBOARD_PORT}" &>/dev/null; then
-    kill "$(lsof -ti:"${DASHBOARD_PORT}")" 2>/dev/null || true
-    sleep 1
-fi
-
-# Start dashboard as a background process
-if [[ -d "$DASHBOARD_DIR/.next" ]]; then
-    cd "$DASHBOARD_DIR"
-    AUTOMATION_DIR="$SCRIPT_DIR" nohup npx next start -H 0.0.0.0 -p "$DASHBOARD_PORT" \
-        >> "$DASHBOARD_LOG" 2>&1 &
-    echo $! > "$DASHBOARD_PID_FILE"
-    cd "$SCRIPT_DIR"
-    log_info "Dashboard server started on port ${DASHBOARD_PORT} (PID: $(cat "$DASHBOARD_PID_FILE"))"
-else
-    log_warn "Dashboard not built yet — run: cd $DASHBOARD_DIR && npm run build"
-fi
-
-# --- Step 9: State Files ---
-echo "[8/8] Initializing state files..."
+# --- Step 7: State Files & First-Boot Seeding ---
+# IMPORTANT: State seeding MUST happen before cron installation to prevent
+# a race where the first poll fires before seeding completes, causing the
+# poller to treat the entire backlog as new items (issue #4).
+echo "[6/9] Initializing state files..."
 mkdir -p "$SCRIPT_DIR/state"
 mkdir -p "$SCRIPT_DIR/state/items"
 touch "$SCRIPT_DIR/state/processed-prs.txt"
@@ -285,7 +225,7 @@ if [[ ! -s "$SCRIPT_DIR/state/processed-issues.txt" ]]; then
     fi
 fi
 
-# Same for PRs
+# Same for PRs (also seeds processed-rework.txt for any open rework PRs)
 if [[ ! -s "$SCRIPT_DIR/state/processed-prs.txt" ]]; then
     log_info "First boot detected — seeding existing PRs as already processed..."
     PR_SEED_COUNT=0
@@ -296,16 +236,81 @@ if [[ ! -s "$SCRIPT_DIR/state/processed-prs.txt" ]]; then
             while IFS= read -r num; do
                 [[ -z "$num" ]] && continue
                 echo "${repo}#${num}" >> "$SCRIPT_DIR/state/processed-prs.txt"
+                echo "${repo}#pr${num}" >> "$SCRIPT_DIR/state/processed-rework.txt"
                 PR_SEED_COUNT=$((PR_SEED_COUNT + 1))
             done < <(gh pr list --repo "$repo" --state open --limit 500 --json number --jq '.[].number' 2>/dev/null || true)
         done < <(read_repos "$proj")
     done < <(read_projects)
     sort -u -o "$SCRIPT_DIR/state/processed-prs.txt" "$SCRIPT_DIR/state/processed-prs.txt" 2>/dev/null || true
+    sort -u -o "$SCRIPT_DIR/state/processed-rework.txt" "$SCRIPT_DIR/state/processed-rework.txt" 2>/dev/null || true
     if [[ $PR_SEED_COUNT -eq 0 ]]; then
         log_warn "No PRs seeded — check gh CLI auth if repos have open PRs"
     else
         log_info "Seeded $PR_SEED_COUNT existing PRs across all repos"
     fi
+fi
+
+# --- Step 8: Install Crontab ---
+echo "[7/9] Installing crontab..."
+
+# Read existing crontab, stripping everything between our marker comments
+EXISTING_CRON=$(crontab -l 2>/dev/null | sed '/^# --- Zapat/,/^# --- End Zapat/d' || true)
+
+# Build new crontab
+NEW_CRON="${EXISTING_CRON}
+# --- Zapat (managed by startup.sh) ---
+# Daily standup Mon-Fri 8 AM
+0 8 * * 1-5 ${SCRIPT_DIR}/jobs/daily-standup.sh >> ${SCRIPT_DIR}/logs/cron-daily.log 2>&1
+# Weekly planning Monday 9 AM
+0 9 * * 1 ${SCRIPT_DIR}/jobs/weekly-planning.sh >> ${SCRIPT_DIR}/logs/cron-weekly.log 2>&1
+# Monthly strategy 1st of month 10 AM
+0 10 1 * * ${SCRIPT_DIR}/jobs/monthly-strategy.sh >> ${SCRIPT_DIR}/logs/cron-monthly.log 2>&1
+# GitHub polling (configurable via POLL_INTERVAL_MINUTES, default 2)
+*/${POLL_INTERVAL_MINUTES:-2} * * * * ${SCRIPT_DIR}/bin/poll-github.sh >> ${SCRIPT_DIR}/logs/cron-poll.log 2>&1
+# Weekly security scan Sunday 6 AM
+0 6 * * 0 ${SCRIPT_DIR}/bin/run-agent.sh --job-name weekly-security-scan --prompt-file ${SCRIPT_DIR}/prompts/weekly-security-scan.txt --budget \${MAX_BUDGET_SECURITY_SCAN:-15} --allowed-tools Read,Glob,Grep,Bash --timeout 1800 --notify slack >> ${SCRIPT_DIR}/logs/cron-security.log 2>&1
+# Daily health digest at 8:05 AM
+5 8 * * * cd ${SCRIPT_DIR} && node bin/zapat status --slack >> ${SCRIPT_DIR}/logs/cron-digest.log 2>&1
+# Log rotation weekly Sunday 3 AM
+0 3 * * 0 cd ${SCRIPT_DIR} && node bin/zapat logs rotate >> ${SCRIPT_DIR}/logs/cron-rotation.log 2>&1
+# Health check every 30 minutes with auto-fix
+*/30 * * * * cd ${SCRIPT_DIR} && node bin/zapat health --auto-fix >> ${SCRIPT_DIR}/logs/cron-health.log 2>&1
+# --- End Zapat ---"
+
+echo "$NEW_CRON" | crontab -
+log_info "Crontab installed (8 entries)"
+
+# --- Step 9: Dashboard Server ---
+echo "[8/9] Starting dashboard server..."
+DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
+DASHBOARD_DIR="${SCRIPT_DIR}/dashboard"
+DASHBOARD_PID_FILE="${SCRIPT_DIR}/state/dashboard.pid"
+DASHBOARD_LOG="${SCRIPT_DIR}/logs/dashboard.log"
+
+# Kill any existing dashboard server
+if [[ -f "$DASHBOARD_PID_FILE" ]]; then
+    OLD_PID=$(cat "$DASHBOARD_PID_FILE" 2>/dev/null)
+    if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+    fi
+    rm -f "$DASHBOARD_PID_FILE"
+fi
+if lsof -ti:"${DASHBOARD_PORT}" &>/dev/null; then
+    kill "$(lsof -ti:"${DASHBOARD_PORT}")" 2>/dev/null || true
+    sleep 1
+fi
+
+# Start dashboard as a background process
+if [[ -d "$DASHBOARD_DIR/.next" ]]; then
+    cd "$DASHBOARD_DIR"
+    AUTOMATION_DIR="$SCRIPT_DIR" nohup npx next start -H 0.0.0.0 -p "$DASHBOARD_PORT" \
+        >> "$DASHBOARD_LOG" 2>&1 &
+    echo $! > "$DASHBOARD_PID_FILE"
+    cd "$SCRIPT_DIR"
+    log_info "Dashboard server started on port ${DASHBOARD_PORT} (PID: $(cat "$DASHBOARD_PID_FILE"))"
+else
+    log_warn "Dashboard not built yet — run: cd $DASHBOARD_DIR && npm run build"
 fi
 
 # --- Notify ---
@@ -327,7 +332,7 @@ echo "  tmux session:  zapat"
 echo "  Repos pulled:  $PULL_SUCCESS / $((PULL_SUCCESS + PULL_FAIL))"
 echo "  Cron jobs:     8 installed"
 echo "  Dashboard:     http://$(hostname):${DASHBOARD_PORT:-8080}"
-echo "  State files:   initialized"
+echo "  State files:   initialized (seeded before cron)"
 echo ""
 echo "  Verify cron:   crontab -l"
 echo "  View logs:     ls ${SCRIPT_DIR}/logs/"
