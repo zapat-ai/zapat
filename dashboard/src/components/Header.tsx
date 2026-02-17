@@ -45,6 +45,7 @@ export function Header({ className }: { className?: string }) {
         <Suspense>
           <ProjectSelector className="lg:hidden" />
         </Suspense>
+        <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-600 lg:hidden" aria-hidden="true" />
         <ThemeToggle />
       </div>
     </div>
