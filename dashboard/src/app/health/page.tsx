@@ -1,5 +1,7 @@
 'use client'
 
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { HealthStatus } from '@/components/HealthStatus'
 import { StatCard } from '@/components/StatCard'
 import { StatsGrid } from '@/components/StatsGrid'
@@ -7,9 +9,13 @@ import { usePolling } from '@/hooks/usePolling'
 import { pipelineConfig } from '../../../pipeline.config'
 import type { SystemStatus } from '@/lib/types'
 
-export default function HealthPage() {
+function HealthContent() {
+  const searchParams = useSearchParams()
+  const project = searchParams.get('project')
+  const projectQuery = project ? `?project=${encodeURIComponent(project)}` : ''
+
   let { data, isLoading } = usePolling<SystemStatus>({
-    url: '/api/health',
+    url: `/api/health${projectQuery}`,
     interval: pipelineConfig.refreshInterval,
   })
 
@@ -53,5 +59,13 @@ export default function HealthPage() {
         <HealthStatus checks={data?.checks || []} loading={isLoading} />
       </div>
     </div>
+  )
+}
+
+export default function HealthPage() {
+  return (
+    <Suspense>
+      <HealthContent />
+    </Suspense>
   )
 }

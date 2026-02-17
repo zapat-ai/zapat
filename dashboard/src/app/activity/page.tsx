@@ -1,14 +1,20 @@
 'use client'
 
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { ActivityTable } from '@/components/ActivityTable'
 import { Card, CardContent } from '@/components/ui/card'
 import { usePolling } from '@/hooks/usePolling'
 import { pipelineConfig } from '../../../pipeline.config'
 import type { MetricEntry } from '@/lib/types'
 
-export default function ActivityPage() {
+function ActivityContent() {
+  const searchParams = useSearchParams()
+  const project = searchParams.get('project')
+  const projectParam = project ? `&project=${encodeURIComponent(project)}` : ''
+
   const { data, isLoading } = usePolling<{ metrics: MetricEntry[] }>({
-    url: '/api/metrics?days=7',
+    url: `/api/metrics?days=7${projectParam}`,
     interval: pipelineConfig.refreshInterval,
   })
 
@@ -32,5 +38,13 @@ export default function ActivityPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function ActivityPage() {
+  return (
+    <Suspense>
+      <ActivityContent />
+    </Suspense>
   )
 }

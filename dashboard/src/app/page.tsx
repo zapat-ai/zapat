@@ -1,5 +1,7 @@
 'use client'
 
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { StatCard } from '@/components/StatCard'
 import { StatsGrid } from '@/components/StatsGrid'
 import { KanbanBoard } from '@/components/KanbanBoard'
@@ -9,29 +11,34 @@ import { usePolling } from '@/hooks/usePolling'
 import { pipelineConfig } from '../../pipeline.config'
 import type { PipelineItem, ChartDataPoint, SystemStatus } from '@/lib/types'
 
-export default function OverviewPage() {
+function OverviewContent() {
+  const searchParams = useSearchParams()
+  const project = searchParams.get('project')
+  const projectParam = project ? `&project=${encodeURIComponent(project)}` : ''
+  const projectQuery = project ? `?project=${encodeURIComponent(project)}` : ''
+
   const { data: itemsData, isLoading: itemsLoading } = usePolling<{ items: PipelineItem[] }>({
-    url: '/api/items',
+    url: `/api/items${projectQuery}`,
     interval: pipelineConfig.refreshInterval,
   })
 
   const { data: metricsData, isLoading: metricsLoading } = usePolling<{ metrics: any[] }>({
-    url: '/api/metrics?days=7',
+    url: `/api/metrics?days=7${projectParam}`,
     interval: pipelineConfig.refreshInterval,
   })
 
   const { data: chartData, isLoading: chartLoading } = usePolling<{ chartData: ChartDataPoint[] }>({
-    url: '/api/metrics?days=14&chart=true',
+    url: `/api/metrics?days=14&chart=true${projectParam}`,
     interval: pipelineConfig.refreshInterval,
   })
 
   const { data: healthData, isLoading: healthLoading } = usePolling<SystemStatus>({
-    url: '/api/health',
+    url: `/api/health${projectQuery}`,
     interval: pipelineConfig.refreshInterval,
   })
 
   const { data: completedData, isLoading: completedLoading } = usePolling<{ items: PipelineItem[] }>({
-    url: '/api/completed',
+    url: `/api/completed${projectQuery}`,
     interval: pipelineConfig.refreshInterval,
   })
 
@@ -110,5 +117,13 @@ export default function OverviewPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function OverviewPage() {
+  return (
+    <Suspense>
+      <OverviewContent />
+    </Suspense>
   )
 }

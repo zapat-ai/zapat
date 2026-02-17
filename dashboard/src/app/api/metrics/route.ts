@@ -8,13 +8,14 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const days = parseInt(searchParams.get('days') || '14')
     const chart = searchParams.get('chart') === 'true'
+    const project = searchParams.get('project') || undefined
 
     if (chart) {
-      const chartData = getChartData(days)
+      const chartData = getChartData(days, project)
       return NextResponse.json({ chartData })
     }
 
-    const metrics = getMetricsData(days)
+    const metrics = getMetricsData(days, project)
     return NextResponse.json({ metrics })
   } catch (error: any) {
     return NextResponse.json(

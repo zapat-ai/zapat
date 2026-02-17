@@ -42,8 +42,13 @@ function execFull(cmd: string): { stdout: string; stderr: string; exitCode: numb
   }
 }
 
-function getRepos(): Array<{ repo: string; localPath: string; type: string }> {
-  const confPath = join(getAutomationDir(), 'config', 'repos.conf')
+function getRepos(project?: string): Array<{ repo: string; localPath: string; type: string }> {
+  let confPath: string
+  if (project && project !== 'default') {
+    confPath = join(getAutomationDir(), 'config', project, 'repos.conf')
+  } else {
+    confPath = join(getAutomationDir(), 'config', 'repos.conf')
+  }
   const repos: Array<{ repo: string; localPath: string; type: string }> = []
 
   if (!existsSync(confPath)) return repos
@@ -106,8 +111,8 @@ function classifyIssueStage(labels: string[]): { stage: string; subStage: string
   return { stage: 'queued', subStage: 'new' }
 }
 
-export function getActiveItems(): PipelineItem[] {
-  const repos = getRepos()
+export function getActiveItems(project?: string): PipelineItem[] {
+  const repos = getRepos(project)
   const items: PipelineItem[] = []
 
   for (const { repo } of repos) {
@@ -177,8 +182,8 @@ export function getActiveItems(): PipelineItem[] {
   return items
 }
 
-export function getCompletedItems(): PipelineItem[] {
-  const repos = getRepos()
+export function getCompletedItems(project?: string): PipelineItem[] {
+  const repos = getRepos(project)
   const items: PipelineItem[] = []
 
   for (const { repo } of repos) {
@@ -237,12 +242,15 @@ export function getCompletedItems(): PipelineItem[] {
   return items.slice(0, 25)
 }
 
-export function getMetricsData(days: number = 14): MetricEntry[] {
-  return readMetrics({ days })
+export function getMetricsData(days: number = 14, project?: string): MetricEntry[] {
+  const metrics = readMetrics({ days })
+  if (!project) return metrics
+  const projectRepos = getRepos(project).map((r) => r.repo)
+  return metrics.filter((m) => projectRepos.includes(m.repo))
 }
 
-export function getChartData(days: number = 14): ChartDataPoint[] {
-  const allMetrics = readMetrics({ days })
+export function getChartData(days: number = 14, project?: string): ChartDataPoint[] {
+  const allMetrics = getMetricsData(days, project)
   const chartData: ChartDataPoint[] = []
 
   for (let i = days - 1; i >= 0; i--) {
@@ -261,7 +269,7 @@ export function getChartData(days: number = 14): ChartDataPoint[] {
   return chartData
 }
 
-export function getHealthChecks(): HealthCheck[] {
+export function getHealthChecks(project?: string): HealthCheck[] {
   const checks: HealthCheck[] = []
   const automationDir = getAutomationDir()
 
@@ -441,9 +449,9 @@ export function getHealthChecks(): HealthCheck[] {
   return checks
 }
 
-export function getSystemStatus(): SystemStatus {
+export function getSystemStatus(project?: string): SystemStatus {
   const automationDir = getAutomationDir()
-  const checks = getHealthChecks()
+  const checks = getHealthChecks(project)
 
   const sessionCheck = execFull('tmux has-session -t zapat')
   const sessionExists = sessionCheck.exitCode === 0
@@ -469,4 +477,40 @@ export function getSystemStatus(): SystemStatus {
     maxSlots: 10,
     checks,
   }
+}
+
+export function getProjectList(): Array<{ slug: string; name: string }> {
+  const confPath = join(getAutomationDir(), 'config', 'projects.conf')
+
+  // Tier 1: explicit manifest
+  if (existsSync(confPath)) {
+    return readFileSync(confPath, 'utf-8').split('\n')
+      .filter(l => l.trim() && !l.startsWith('#'))
+      .map(l => {
+        const parts = l.split('\t')
+        return { slug: parts[0].trim(), name: (parts[1] || parts[0]).trim() }
+      })
+  }
+
+  // Tier 2: scan config/*/ for dirs containing repos.conf
+  const configDir = join(getAutomationDir(), 'config')
+  if (existsSync(configDir)) {
+    try {
+      const dirs = readdirSync(configDir)
+        .filter(f => {
+          const full = join(configDir, f)
+          return statSync(full).isDirectory() && existsSync(join(full, 'repos.conf'))
+        })
+      if (dirs.length > 0) {
+        return dirs.map(slug => ({ slug, name: slug }))
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Tier 3: legacy single-project
+  if (existsSync(join(getAutomationDir(), 'config', 'repos.conf'))) {
+    return [{ slug: 'default', name: 'Default Project' }]
+  }
+
+  return []
 }
