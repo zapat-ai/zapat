@@ -21,13 +21,24 @@ function runDashboard(opts) {
   const automationEnv = { ...process.env, AUTOMATION_DIR: getAutomationDir() };
 
   if (opts.dev) {
-    console.log('Starting Next.js dev server...');
-    execSync('npm run dev', { cwd: dashboardDir, stdio: 'inherit', env: { ...automationEnv, PORT: String(parseInt(process.env.DASHBOARD_PORT) || 3000) } });
+    const devPort = parseInt(process.env.DASHBOARD_PORT) || 3000;
+    if (devPort < 1 || devPort > 65535) {
+      console.error(`Invalid DASHBOARD_PORT: ${devPort}. Must be 1-65535.`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Starting Next.js dev server on port ${devPort}...`);
+    execSync(`npm run dev -- -p ${devPort}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
     return;
   }
 
   if (opts.serve !== undefined && !opts.static) {
     const port = parseInt(opts.serve) || parseInt(process.env.DASHBOARD_PORT) || 3000;
+    if (port < 1 || port > 65535) {
+      console.error(`Invalid port: ${port}. Must be 1-65535.`);
+      process.exitCode = 1;
+      return;
+    }
     console.log(`Starting Next.js production server on port ${port}...`);
     execSync(`npm run start -- -p ${port}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
     return;

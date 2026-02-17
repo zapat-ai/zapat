@@ -42,10 +42,27 @@ function execFull(cmd: string): { stdout: string; stderr: string; exitCode: numb
   }
 }
 
+function isValidProjectSlug(slug: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(slug)
+}
+
+function getProjectConfigDir(slug: string): string {
+  const root = getAutomationDir()
+  if (
+    slug === 'default'
+    && !existsSync(join(root, 'config', 'default'))
+    && existsSync(join(root, 'config', 'repos.conf'))
+  ) {
+    return join(root, 'config')
+  }
+  return join(root, 'config', slug)
+}
+
 function getRepos(project?: string): Array<{ repo: string; localPath: string; type: string }> {
+  if (project && !isValidProjectSlug(project)) return []
   let confPath: string
-  if (project && project !== 'default') {
-    confPath = join(getAutomationDir(), 'config', project, 'repos.conf')
+  if (project) {
+    confPath = join(getProjectConfigDir(project), 'repos.conf')
   } else {
     confPath = join(getAutomationDir(), 'config', 'repos.conf')
   }
@@ -243,6 +260,7 @@ export function getCompletedItems(project?: string): PipelineItem[] {
 }
 
 export function getMetricsData(days: number = 14, project?: string): MetricEntry[] {
+  if (project && !isValidProjectSlug(project)) return []
   const metrics = readMetrics({ days })
   if (!project) return metrics
   const projectRepos = getRepos(project).map((r) => r.repo)
@@ -269,7 +287,9 @@ export function getChartData(days: number = 14, project?: string): ChartDataPoin
   return chartData
 }
 
-export function getHealthChecks(project?: string): HealthCheck[] {
+// Health checks are system-wide (tmux, slots, gh auth) — not project-scoped.
+// The project param is accepted for API consistency but unused.
+export function getHealthChecks(_project?: string): HealthCheck[] {
   const checks: HealthCheck[] = []
   const automationDir = getAutomationDir()
 
