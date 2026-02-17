@@ -28,7 +28,7 @@ function runDashboard(opts) {
       return;
     }
     console.log(`Starting Next.js dev server on port ${devPort}...`);
-    execSync(`npm run dev -- -p ${devPort}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
+    execSync(`npm run dev -- -H 127.0.0.1 -p ${devPort}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
     return;
   }
 
@@ -40,7 +40,7 @@ function runDashboard(opts) {
       return;
     }
     console.log(`Starting Next.js production server on port ${port}...`);
-    execSync(`npm run start -- -p ${port}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
+    execSync(`npm run start -- -H 127.0.0.1 -p ${port}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
     return;
   }
 
@@ -72,8 +72,8 @@ function serveDashboard(port) {
     }
   });
 
-  server.listen(port, '0.0.0.0', () => {
-    console.log(`Dashboard server running at http://0.0.0.0:${port} (cache TTL: 5m)`);
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`Dashboard server running at http://127.0.0.1:${port} (cache TTL: 5m)`);
   });
 }
 
