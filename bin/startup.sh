@@ -304,7 +304,7 @@ fi
 # Start dashboard as a background process
 if [[ -d "$DASHBOARD_DIR/.next" ]]; then
     cd "$DASHBOARD_DIR"
-    AUTOMATION_DIR="$SCRIPT_DIR" nohup npx next start -H 0.0.0.0 -p "$DASHBOARD_PORT" \
+    AUTOMATION_DIR="$SCRIPT_DIR" nohup npx next start -H 127.0.0.1 -p "$DASHBOARD_PORT" \
         >> "$DASHBOARD_LOG" 2>&1 &
     echo $! > "$DASHBOARD_PID_FILE"
     cd "$SCRIPT_DIR"
