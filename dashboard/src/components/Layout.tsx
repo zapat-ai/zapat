@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { Suspense } from 'react'
 
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
@@ -18,7 +19,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </Link>
           </div>
           <Header />
-          <Navigation className="hidden lg:mt-10 lg:block" />
+          <Suspense>
+            <Navigation className="hidden lg:mt-10 lg:block" />
+          </Suspense>
         </div>
       </header>
       <div className="relative flex h-full flex-col px-4 pt-14 sm:px-6 lg:px-8">
