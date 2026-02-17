@@ -22,12 +22,12 @@ function runDashboard(opts) {
 
   if (opts.dev) {
     console.log('Starting Next.js dev server...');
-    execSync('npm run dev', { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
+    execSync('npm run dev', { cwd: dashboardDir, stdio: 'inherit', env: { ...automationEnv, PORT: String(parseInt(process.env.DASHBOARD_PORT) || 3000) } });
     return;
   }
 
   if (opts.serve !== undefined && !opts.static) {
-    const port = parseInt(opts.serve) || 3000;
+    const port = parseInt(opts.serve) || parseInt(process.env.DASHBOARD_PORT) || 3000;
     console.log(`Starting Next.js production server on port ${port}...`);
     execSync(`npm run start -- -p ${port}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
     return;
