@@ -109,6 +109,68 @@ describe('getProjectList', () => {
   })
 })
 
+describe('slug validation (path traversal prevention)', () => {
+  it('rejects slugs with path traversal characters', () => {
+    mockExistsSync.mockReturnValue(false)
+
+    // All these should return empty due to invalid slug
+    expect(getActiveItems('../../etc')).toEqual([])
+    expect(getCompletedItems('../secret')).toEqual([])
+    expect(getMetricsData(14, '../../etc')).toEqual([])
+  })
+
+  it('rejects slugs with special characters', () => {
+    mockExistsSync.mockReturnValue(false)
+
+    expect(getActiveItems('foo/bar')).toEqual([])
+    expect(getActiveItems('foo bar')).toEqual([])
+    expect(getActiveItems('foo.bar')).toEqual([])
+  })
+
+  it('accepts valid slugs', () => {
+    mockExistsSync.mockReturnValue(false)
+
+    // These should not throw — they'll return [] because config doesn't exist
+    expect(getActiveItems('my-project')).toEqual([])
+    expect(getActiveItems('project_123')).toEqual([])
+    expect(getActiveItems('MyProject')).toEqual([])
+  })
+})
+
+describe('getRepos default project path logic', () => {
+  it('uses top-level config/ for slug=default when no config/default/ dir', () => {
+    const configDir = join('/tmp/test-automation', 'config')
+    const topLevelConf = join(configDir, 'repos.conf')
+    mockExistsSync.mockImplementation((p: string) => {
+      // config/default/ does NOT exist, but config/repos.conf DOES
+      if (p === join(configDir, 'default')) return false
+      if (p === topLevelConf) return true
+      return false
+    })
+    mockReadFileSync.mockReturnValue('org/repo\t/path\tnode\n')
+
+    const result = getActiveItems('default')
+    // Should have tried to read the top-level repos.conf
+    expect(mockReadFileSync).toHaveBeenCalledWith(topLevelConf, 'utf-8')
+  })
+
+  it('uses config/default/ for slug=default when that dir exists', () => {
+    const configDir = join('/tmp/test-automation', 'config')
+    const defaultDirConf = join(configDir, 'default', 'repos.conf')
+    mockExistsSync.mockImplementation((p: string) => {
+      // config/default/ DOES exist
+      if (p === join(configDir, 'default')) return true
+      if (p === defaultDirConf) return true
+      return false
+    })
+    mockReadFileSync.mockReturnValue('org/repo\t/path\tnode\n')
+
+    const result = getActiveItems('default')
+    // Should have tried to read config/default/repos.conf
+    expect(mockReadFileSync).toHaveBeenCalledWith(defaultDirConf, 'utf-8')
+  })
+})
+
 describe('getMetricsData', () => {
   it('returns all metrics when no project filter', () => {
     const metricsPath = join('/tmp/test-automation', 'data', 'metrics.jsonl')

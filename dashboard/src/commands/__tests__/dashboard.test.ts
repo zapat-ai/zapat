@@ -25,6 +25,17 @@ describe('dashboard port logic', () => {
     expect(calcPort(true, undefined)).toBe(3000)
   })
 
+  it('validates port range', () => {
+    const isValidPort = (port: number) => port >= 1 && port <= 65535
+
+    expect(isValidPort(3000)).toBe(true)
+    expect(isValidPort(1)).toBe(true)
+    expect(isValidPort(65535)).toBe(true)
+    expect(isValidPort(0)).toBe(false)
+    expect(isValidPort(65536)).toBe(false)
+    expect(isValidPort(-1)).toBe(false)
+  })
+
   it('dev mode passes PORT env from DASHBOARD_PORT', () => {
     // Test the dev port calculation (mirrors dashboard.mjs line 25)
     const calcDevPort = (envDashboardPort: any) => {

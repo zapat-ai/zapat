@@ -145,6 +145,40 @@ describe('API Route: /api/health', () => {
   })
 })
 
+describe('API Route slug validation (path traversal)', () => {
+  it('rejects path traversal in /api/items', async () => {
+    const { GET } = await import('../items/route')
+    const response = await GET(new Request('http://localhost/api/items?project=../../etc'))
+    expect(response.status).toBe(400)
+    const json = await response.json()
+    expect(json.error).toBe('Invalid project slug')
+  })
+
+  it('rejects path traversal in /api/metrics', async () => {
+    const { GET } = await import('../metrics/route')
+    const response = await GET(new Request('http://localhost/api/metrics?project=../secret'))
+    expect(response.status).toBe(400)
+  })
+
+  it('rejects path traversal in /api/completed', async () => {
+    const { GET } = await import('../completed/route')
+    const response = await GET(new Request('http://localhost/api/completed?project=foo/bar'))
+    expect(response.status).toBe(400)
+  })
+
+  it('rejects path traversal in /api/health', async () => {
+    const { GET } = await import('../health/route')
+    const response = await GET(new Request('http://localhost/api/health?project=foo.bar'))
+    expect(response.status).toBe(400)
+  })
+
+  it('accepts valid slugs with hyphens and underscores', async () => {
+    const { GET } = await import('../items/route')
+    const response = await GET(new Request('http://localhost/api/items?project=my-project_123'))
+    expect(response.status).toBe(200)
+  })
+})
+
 describe('API Route: /api/config', () => {
   it('includes projects list', async () => {
     const { GET } = await import('../config/route')
