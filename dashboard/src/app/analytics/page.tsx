@@ -1,5 +1,7 @@
 'use client'
 
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { SuccessChart } from '@/components/SuccessChart'
 import { StatCard } from '@/components/StatCard'
 import { StatsGrid } from '@/components/StatsGrid'
@@ -9,19 +11,23 @@ import { usePolling } from '@/hooks/usePolling'
 import { pipelineConfig } from '../../../pipeline.config'
 import type { ChartDataPoint, MetricEntry } from '@/lib/types'
 
-export default function AnalyticsPage() {
+function AnalyticsContent() {
+  const searchParams = useSearchParams()
+  const project = searchParams.get('project')
+  const projectParam = project ? `&project=${encodeURIComponent(project)}` : ''
+
   const { data: chart14, isLoading: chart14Loading } = usePolling<{ chartData: ChartDataPoint[] }>({
-    url: '/api/metrics?days=14&chart=true',
+    url: `/api/metrics?days=14&chart=true${projectParam}`,
     interval: pipelineConfig.refreshInterval,
   })
 
   const { data: chart30, isLoading: chart30Loading } = usePolling<{ chartData: ChartDataPoint[] }>({
-    url: '/api/metrics?days=30&chart=true',
+    url: `/api/metrics?days=30&chart=true${projectParam}`,
     interval: pipelineConfig.refreshInterval,
   })
 
   const { data: metricsData, isLoading: metricsLoading } = usePolling<{ metrics: MetricEntry[] }>({
-    url: '/api/metrics?days=30',
+    url: `/api/metrics?days=30${projectParam}`,
     interval: pipelineConfig.refreshInterval,
   })
 
@@ -150,5 +156,13 @@ export default function AnalyticsPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function AnalyticsPage() {
+  return (
+    <Suspense>
+      <AnalyticsContent />
+    </Suspense>
   )
 }

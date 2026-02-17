@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { cn } from '@/lib/utils'
 
 import { Logo } from '@/components/Logo'
+import { ProjectSelector } from '@/components/ProjectSelector'
 import {
   MobileNavigation,
   useMobileNavigationStore,
@@ -34,8 +36,15 @@ export function Header({ className }: { className?: string }) {
           <Logo className="h-6" />
         </Link>
       </div>
-      <div className="hidden lg:block" />
+      <div className="hidden items-center gap-3 lg:flex">
+        <Suspense>
+          <ProjectSelector />
+        </Suspense>
+      </div>
       <div className="flex items-center gap-5">
+        <Suspense>
+          <ProjectSelector className="lg:hidden" />
+        </Suspense>
         <ThemeToggle />
       </div>
     </div>

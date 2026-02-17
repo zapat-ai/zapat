@@ -3,9 +3,16 @@ import { getCompletedItems } from '@/lib/data'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+const VALID_SLUG = /^[a-zA-Z0-9_-]+$/
+
+export async function GET(request: Request) {
   try {
-    const items = getCompletedItems()
+    const { searchParams } = new URL(request.url)
+    const project = searchParams.get('project') || undefined
+    if (project && !VALID_SLUG.test(project)) {
+      return NextResponse.json({ error: 'Invalid project slug' }, { status: 400 })
+    }
+    const items = getCompletedItems(project)
     return NextResponse.json({ items })
   } catch (error: any) {
     return NextResponse.json(

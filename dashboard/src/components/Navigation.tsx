@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 interface NavGroup {
@@ -45,6 +45,8 @@ function NavigationGroup({
   className?: string
 }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const projectParam = searchParams.get('project')
 
   return (
     <li className={cn('relative mt-6', className)}>
@@ -56,12 +58,15 @@ function NavigationGroup({
         <ul role="list" className="border-l border-transparent">
           {group.links.map((link) => {
             const isActive = link.href === pathname
+            const href = projectParam
+              ? `${link.href}?project=${encodeURIComponent(projectParam)}`
+              : link.href
             return (
               <li key={link.href} className="relative">
                 {isActive && (
                   <div className="absolute left-0 h-6 w-px bg-emerald-500" style={{ top: 4 }} />
                 )}
-                <NavLink href={link.href} active={isActive}>
+                <NavLink href={href} active={isActive}>
                   {link.title}
                 </NavLink>
               </li>
