@@ -46,6 +46,7 @@ function NavigationGroup({
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const hasProject = searchParams.has('project')
   const projectParam = searchParams.get('project')
 
   return (
@@ -58,8 +59,8 @@ function NavigationGroup({
         <ul role="list" className="border-l border-transparent">
           {group.links.map((link) => {
             const isActive = link.href === pathname
-            const href = projectParam
-              ? `${link.href}?project=${encodeURIComponent(projectParam)}`
+            const href = hasProject
+              ? `${link.href}?project=${encodeURIComponent(projectParam ?? '')}`
               : link.href
             return (
               <li key={link.href} className="relative">
