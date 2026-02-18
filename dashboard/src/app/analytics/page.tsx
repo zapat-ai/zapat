@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { SuccessChart } from '@/components/SuccessChart'
 import { StatCard } from '@/components/StatCard'
 import { StatsGrid } from '@/components/StatsGrid'
@@ -12,8 +12,12 @@ import { pipelineConfig } from '../../../pipeline.config'
 import type { ChartDataPoint, MetricEntry } from '@/lib/types'
 
 function AnalyticsContent() {
-  const { project } = useProject()
+  const { project, projectName } = useProject()
   const projectParam = project ? `&project=${encodeURIComponent(project)}` : ''
+
+  useEffect(() => {
+    document.title = project ? `Analytics - ${projectName}` : 'Analytics - Zapat'
+  }, [project, projectName])
 
   const { data: chart14, isLoading: chart14Loading } = usePolling<{ chartData: ChartDataPoint[] }>({
     url: `/api/metrics?days=14&chart=true${projectParam}`,

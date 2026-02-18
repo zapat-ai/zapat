@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { HealthStatus } from '@/components/HealthStatus'
 import { StatCard } from '@/components/StatCard'
 import { StatsGrid } from '@/components/StatsGrid'
@@ -10,8 +10,12 @@ import { pipelineConfig } from '../../../pipeline.config'
 import type { SystemStatus } from '@/lib/types'
 
 function HealthContent() {
-  const { project } = useProject()
+  const { project, projectName } = useProject()
   const projectQuery = project ? `?project=${encodeURIComponent(project)}` : ''
+
+  useEffect(() => {
+    document.title = project ? `Health - ${projectName}` : 'Health - Zapat'
+  }, [project, projectName])
 
   let { data, isLoading } = usePolling<SystemStatus>({
     url: `/api/health${projectQuery}`,

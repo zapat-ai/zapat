@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { ActivityTable } from '@/components/ActivityTable'
 import { Card, CardContent } from '@/components/ui/card'
 import { usePolling } from '@/hooks/usePolling'
@@ -9,8 +9,12 @@ import { pipelineConfig } from '../../../pipeline.config'
 import type { MetricEntry } from '@/lib/types'
 
 function ActivityContent() {
-  const { project } = useProject()
+  const { project, projectName } = useProject()
   const projectParam = project ? `&project=${encodeURIComponent(project)}` : ''
+
+  useEffect(() => {
+    document.title = project ? `Activity - ${projectName}` : 'Activity - Zapat'
+  }, [project, projectName])
 
   const { data, isLoading } = usePolling<{ metrics: MetricEntry[] }>({
     url: `/api/metrics?days=7${projectParam}`,

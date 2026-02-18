@@ -33,10 +33,11 @@ export function useProject(): UseProjectResult {
 
   const projects = configData?.projects || []
   const defaultProject = configData?.defaultProject
-  const urlProject = searchParams.get('project') || undefined
 
-  // Use URL param if set, otherwise fall back to server-side default
-  const project = urlProject ?? defaultProject
+  // Distinguish "no ?project param" (use default) from "?project=" (explicit All Projects)
+  const hasExplicitProject = searchParams.has('project')
+  const urlProject = searchParams.get('project') || undefined
+  const project = hasExplicitProject ? urlProject : (urlProject ?? defaultProject)
 
   const projectName = project
     ? projects.find((p) => p.slug === project)?.name || project
@@ -48,7 +49,8 @@ export function useProject(): UseProjectResult {
       if (slug) {
         params.set('project', slug)
       } else {
-        params.delete('project')
+        // Set empty value so hasExplicitProject is true, preventing defaultProject override
+        params.set('project', '')
       }
       const qs = params.toString()
       router.push(qs ? `${pathname}?${qs}` : pathname)
