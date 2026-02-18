@@ -43,6 +43,7 @@ jest.mock('../../../../pipeline.config', () => ({
   pipelineConfig: {
     name: 'Test Pipeline',
     refreshInterval: 30000,
+    defaultProject: 'acme',
     stages: [],
   },
 }), { virtual: true })
@@ -191,5 +192,13 @@ describe('API Route: /api/config', () => {
       { slug: 'beta', name: 'Beta' },
     ])
     expect(json.name).toBe('Test Pipeline')
+  })
+
+  it('includes defaultProject from pipeline config', async () => {
+    const { GET } = await import('../config/route')
+    const response = await GET()
+    const json = await response.json()
+
+    expect(json.defaultProject).toBe('acme')
   })
 })
