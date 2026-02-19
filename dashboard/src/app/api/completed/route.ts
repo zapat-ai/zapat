@@ -14,9 +14,9 @@ export async function GET(request: Request) {
     }
     const items = getCompletedItems(project)
     return NextResponse.json({ items })
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch completed items' },
+      { error: 'Internal server error' },
       { status: 500 },
     )
   }

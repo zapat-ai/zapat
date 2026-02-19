@@ -43,6 +43,7 @@ jest.mock('../../../../pipeline.config', () => ({
   pipelineConfig: {
     name: 'Test Pipeline',
     refreshInterval: 30000,
+    defaultProject: 'acme',
     stages: [],
   },
 }), { virtual: true })
@@ -179,6 +180,45 @@ describe('API Route slug validation (path traversal)', () => {
   })
 })
 
+describe('API Route error sanitization', () => {
+  it('does not leak error details from /api/items', async () => {
+    ;(getActiveItems as jest.Mock).mockImplementationOnce(() => { throw new Error('ENOENT: /tmp/secret/path') })
+    const { GET } = await import('../items/route')
+    const response = await GET(new Request('http://localhost/api/items'))
+    expect(response.status).toBe(500)
+    const json = await response.json()
+    expect(json.error).toBe('Internal server error')
+    expect(json.error).not.toContain('ENOENT')
+  })
+
+  it('does not leak error details from /api/metrics', async () => {
+    ;(getMetricsData as jest.Mock).mockImplementationOnce(() => { throw new Error('permission denied /etc/passwd') })
+    const { GET } = await import('../metrics/route')
+    const response = await GET(new Request('http://localhost/api/metrics?days=7'))
+    expect(response.status).toBe(500)
+    const json = await response.json()
+    expect(json.error).toBe('Internal server error')
+  })
+
+  it('does not leak error details from /api/health', async () => {
+    ;(getSystemStatus as jest.Mock).mockImplementationOnce(() => { throw new Error('cannot read /var/run/secret') })
+    const { GET } = await import('../health/route')
+    const response = await GET(new Request('http://localhost/api/health'))
+    expect(response.status).toBe(500)
+    const json = await response.json()
+    expect(json.error).toBe('Internal server error')
+  })
+
+  it('does not leak error details from /api/completed', async () => {
+    ;(getCompletedItems as jest.Mock).mockImplementationOnce(() => { throw new Error('spawn gh ENOENT') })
+    const { GET } = await import('../completed/route')
+    const response = await GET(new Request('http://localhost/api/completed'))
+    expect(response.status).toBe(500)
+    const json = await response.json()
+    expect(json.error).toBe('Internal server error')
+  })
+})
+
 describe('API Route: /api/config', () => {
   it('includes projects list', async () => {
     const { GET } = await import('../config/route')
@@ -191,5 +231,13 @@ describe('API Route: /api/config', () => {
       { slug: 'beta', name: 'Beta' },
     ])
     expect(json.name).toBe('Test Pipeline')
+  })
+
+  it('includes defaultProject from pipeline config', async () => {
+    const { GET } = await import('../config/route')
+    const response = await GET()
+    const json = await response.json()
+
+    expect(json.defaultProject).toBe('acme')
   })
 })

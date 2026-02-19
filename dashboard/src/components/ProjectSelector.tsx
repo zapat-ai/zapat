@@ -2,11 +2,11 @@
 
 import { useProject } from '@/hooks/useProject'
 import { cn } from '@/lib/utils'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export function ProjectSelector({ className }: { className?: string }) {
-  const { project, projectName, projects, setProject } = useProject()
+  const { project, projectName, projects, setProject, isLoading } = useProject()
   const [open, setOpen] = useState(false)
   const [focusIndex, setFocusIndex] = useState(-1)
   const ref = useRef<HTMLDivElement>(null)
@@ -20,13 +20,17 @@ export function ProjectSelector({ className }: { className?: string }) {
   ]
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
+    function handleOutsideInteraction(e: MouseEvent | TouchEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false)
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('mousedown', handleOutsideInteraction)
+    document.addEventListener('touchstart', handleOutsideInteraction)
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideInteraction)
+      document.removeEventListener('touchstart', handleOutsideInteraction)
+    }
   }, [])
 
   // Reset focus index when dropdown opens
@@ -73,6 +77,9 @@ export function ProjectSelector({ className }: { className?: string }) {
           setOpen(false)
           buttonRef.current?.focus()
           break
+        case 'Tab':
+          setOpen(false)
+          break
         case 'Home':
           e.preventDefault()
           setFocusIndex(0)
@@ -94,9 +101,31 @@ export function ProjectSelector({ className }: { className?: string }) {
     }
   }, [focusIndex, open])
 
-  // Don't show selector if there's only one project (or none)
-  if (projects.length <= 1) {
-    return null
+  // Show static label if there's only one project (same pill styling as dropdown trigger)
+  if (!isLoading && projects.length <= 1) {
+    const name = projects.length === 1 ? projects[0].name : null
+    if (!name) return null
+    return (
+      <div className={cn('relative', className)}>
+        <span
+          className={cn(
+            'flex items-center rounded-md px-2.5 py-1.5 text-sm font-medium',
+            'text-zinc-600 dark:text-zinc-400',
+          )}
+        >
+          <span className="max-w-[160px] truncate">{name}</span>
+        </span>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className={cn('flex items-center gap-1.5 px-2.5 py-1.5', className)}>
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+        <span className="text-sm text-zinc-400">Loading...</span>
+      </div>
+    )
   }
 
   const listboxId = 'project-selector-listbox'
@@ -128,7 +157,7 @@ export function ProjectSelector({ className }: { className?: string }) {
           role="listbox"
           aria-label="Select project"
           aria-activedescendant={focusIndex >= 0 ? `project-option-${focusIndex}` : undefined}
-          className="absolute right-0 lg:left-0 lg:right-auto top-full z-50 mt-1 min-w-[180px] max-h-[280px] overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
+          className="absolute top-full z-50 mt-1 min-w-[180px] max-w-[260px] max-h-[280px] overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800 right-0 lg:right-auto lg:left-0"
         >
           {options.map((opt, idx) => {
             const isSelected = opt.slug === project || (!opt.slug && !project)
@@ -153,7 +182,7 @@ export function ProjectSelector({ className }: { className?: string }) {
                     isSelected ? 'opacity-100' : 'opacity-0',
                   )}
                 />
-                {opt.name}
+                <span className="truncate">{opt.name}</span>
               </button>
             )
           })}
