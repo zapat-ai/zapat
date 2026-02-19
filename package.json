@@ -31,8 +31,8 @@
     "start": "node bin/zapat",
     "test": "node tests/check-consistency.mjs && node tests/check-docs.mjs && npm run test:bats && npm run test:lint",
     "test:lint": "shellcheck bin/*.sh triggers/*.sh lib/*.sh jobs/*.sh 2>/dev/null || echo 'shellcheck not installed — skipping'",
-    "test:shell": "npx bats tests/"
-    "test:bats": "npx bats tests/*.bats",
+    "test:shell": "npx bats tests/",
+    "test:bats": "npx bats tests/*.bats"
   },
   "dependencies": {
     "commander": "^12.0.0"
