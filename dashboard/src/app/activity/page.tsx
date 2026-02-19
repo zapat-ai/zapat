@@ -1,17 +1,20 @@
 'use client'
 
-import { Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect } from 'react'
 import { ActivityTable } from '@/components/ActivityTable'
 import { Card, CardContent } from '@/components/ui/card'
 import { usePolling } from '@/hooks/usePolling'
+import { useProject } from '@/hooks/useProject'
 import { pipelineConfig } from '../../../pipeline.config'
 import type { MetricEntry } from '@/lib/types'
 
 function ActivityContent() {
-  const searchParams = useSearchParams()
-  const project = searchParams.get('project')
+  const { project, projectName } = useProject()
   const projectParam = project ? `&project=${encodeURIComponent(project)}` : ''
+
+  useEffect(() => {
+    document.title = project ? `Activity - ${projectName}` : 'Activity - Zapat'
+  }, [project, projectName])
 
   const { data, isLoading } = usePolling<{ metrics: MetricEntry[] }>({
     url: `/api/metrics?days=7${projectParam}`,

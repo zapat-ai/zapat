@@ -7,6 +7,7 @@ export interface StageConfig {
 export interface PipelineConfig {
   name: string
   refreshInterval: number
+  defaultProject?: string
   stages: StageConfig[]
   dataSources: {
     automationDir: string

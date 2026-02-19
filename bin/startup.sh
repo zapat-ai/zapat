@@ -342,6 +342,7 @@ log_info "Crontab installed (8 entries)"
 # --- Step 9: Dashboard Server ---
 echo "[8/9] Starting dashboard server..."
 DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
+DASHBOARD_HOST=${DASHBOARD_HOST:-127.0.0.1}
 DASHBOARD_DIR="${SCRIPT_DIR}/dashboard"
 DASHBOARD_PID_FILE="${SCRIPT_DIR}/state/dashboard.pid"
 DASHBOARD_LOG="${SCRIPT_DIR}/logs/dashboard.log"
@@ -363,11 +364,11 @@ fi
 # Start dashboard as a background process
 if [[ -d "$DASHBOARD_DIR/.next" ]]; then
     cd "$DASHBOARD_DIR"
-    AUTOMATION_DIR="$SCRIPT_DIR" nohup npx next start -H 0.0.0.0 -p "$DASHBOARD_PORT" \
+    AUTOMATION_DIR="$SCRIPT_DIR" nohup npx next start -H "$DASHBOARD_HOST" -p "$DASHBOARD_PORT" \
         >> "$DASHBOARD_LOG" 2>&1 &
     echo $! > "$DASHBOARD_PID_FILE"
     cd "$SCRIPT_DIR"
-    log_info "Dashboard server started on port ${DASHBOARD_PORT} (PID: $(cat "$DASHBOARD_PID_FILE"))"
+    log_info "Dashboard server started on ${DASHBOARD_HOST}:${DASHBOARD_PORT} (PID: $(cat "$DASHBOARD_PID_FILE"))"
 else
     log_warn "Dashboard not built yet — run: cd $DASHBOARD_DIR && npm run build"
 fi

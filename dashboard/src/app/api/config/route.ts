@@ -6,6 +6,7 @@ export async function GET() {
   return NextResponse.json({
     name: pipelineConfig.name,
     refreshInterval: pipelineConfig.refreshInterval,
+    defaultProject: pipelineConfig.defaultProject,
     stages: pipelineConfig.stages,
     projects: getProjectList(),
   })

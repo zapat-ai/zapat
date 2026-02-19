@@ -1,18 +1,21 @@
 'use client'
 
-import { Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect } from 'react'
 import { HealthStatus } from '@/components/HealthStatus'
 import { StatCard } from '@/components/StatCard'
 import { StatsGrid } from '@/components/StatsGrid'
 import { usePolling } from '@/hooks/usePolling'
+import { useProject } from '@/hooks/useProject'
 import { pipelineConfig } from '../../../pipeline.config'
 import type { SystemStatus } from '@/lib/types'
 
 function HealthContent() {
-  const searchParams = useSearchParams()
-  const project = searchParams.get('project')
+  const { project, projectName } = useProject()
   const projectQuery = project ? `?project=${encodeURIComponent(project)}` : ''
+
+  useEffect(() => {
+    document.title = project ? `Health - ${projectName}` : 'Health - Zapat'
+  }, [project, projectName])
 
   let { data, isLoading } = usePolling<SystemStatus>({
     url: `/api/health${projectQuery}`,
