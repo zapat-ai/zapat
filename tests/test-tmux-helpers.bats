@@ -274,6 +274,70 @@ _load_permission_pattern() {
     ! echo "This PR updates the file permissions for the deploy script" | grep -qE "$PANE_PATTERN_PERMISSION"
 }
 
+# --- Signal file path tests ---
+
+@test "signal file is created under state/pane-signals/ not /tmp/" {
+    # Simulate what check_pane_health does when writing a signal file
+    local window="test-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -f "$TEST_DIR/state/pane-signals/signal-test-win" ]]
+    [[ "$(cat "$signal_file")" == "rate_limited" ]]
+    # Must NOT exist in /tmp/
+    [[ ! -f "/tmp/zapat-pane-signal-test-win" ]]
+}
+
+@test "signal file directory is created if missing" {
+    # Ensure the pane-signals dir does not exist yet
+    [[ ! -d "$TEST_DIR/state/pane-signals" ]]
+
+    local window="new-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -d "$TEST_DIR/state/pane-signals" ]]
+    [[ -f "$signal_file" ]]
+}
+
+@test "signal file cleanup removes the file" {
+    local window="cleanup-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    # Simulate cleanup (as done in monitor_session)
+    rm -f "$signal_file"
+
+    [[ ! -f "$signal_file" ]]
+}
+
+@test "signal file path uses AUTOMATION_DIR when set" {
+    local custom_dir="$(mktemp -d)"
+    AUTOMATION_DIR="$custom_dir"
+    local window="custom-dir-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -f "$custom_dir/state/pane-signals/signal-custom-dir-win" ]]
+    rm -rf "$custom_dir"
+    AUTOMATION_DIR="$TEST_DIR"
+}
+
+@test "signal file path falls back to SCRIPT_DIR when AUTOMATION_DIR is unset" {
+    unset AUTOMATION_DIR
+    local window="fallback-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -f "$TEST_DIR/state/pane-signals/signal-fallback-win" ]]
+    export AUTOMATION_DIR="$TEST_DIR"
+}
+
 # -- Stale throttle file cleanup tests --
 
 @test "monitor_session cleans stale throttle files older than 10 minutes" {

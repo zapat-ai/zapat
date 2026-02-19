@@ -190,7 +190,9 @@ check_pane_health() {
                 "\"type\":\"pane_health\",\"issue\":\"account_rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
 
             # Signal monitor_session to tear down this session
-            echo "rate_limited" > "/tmp/zapat-pane-signal-${window}"
+            local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+            mkdir -p "$(dirname "$signal_file")"
+            echo "rate_limited" > "$signal_file"
 
             if _pane_health_should_notify "$pane_id" "account_rate_limit"; then
                 "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
@@ -282,7 +284,8 @@ monitor_session() {
     local timeout="$2"
     local interval="${3:-15}"
     local job_name="${4:-monitor}"
-    local signal_file="/tmp/zapat-pane-signal-${window}"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
     local start
     start=$(date +%s)
 
