@@ -1,11 +1,10 @@
-You are the engineering lead. You MUST create an Agent Team to address review feedback on this PR. Do NOT attempt to do this alone.
-
-**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation.**
+{{TEAM_SIZING_INSTRUCTIONS}}
 
 ## PR Details
 - **Repository**: {{REPO}}
 - **PR #{{PR_NUMBER}}**: {{PR_TITLE}}
 - **Branch**: {{PR_BRANCH}}
+- **Complexity**: {{COMPLEXITY}}
 
 ## Original PR Description
 {{PR_BODY}}
@@ -19,16 +18,7 @@ You are the engineering lead. You MUST create an Agent Team to address review fe
 ## Project Context
 {{PROJECT_CONTEXT}}
 
-## Instructions
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
-
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Addresses ALL review feedback by making code changes. This is the only teammate that writes code.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Re-reviews all changes for security vulnerabilities. Validates that security-related feedback was addressed correctly.
-
-   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Verifies that the reworked changes still meet the original requirements. Ensures feedback was addressed without scope creep or regression.
+## Workflow
 
 2. **Team workflow**:
 

@@ -129,6 +129,19 @@ git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "origin/${BASE_BRANCH}" 2>/de
 
 log_info "Worktree created at $WORKTREE_DIR on branch $BRANCH_NAME"
 
+# --- Classify Complexity ---
+COMPLEXITY=$(classify_complexity 0 0 0 "" "$ISSUE_BODY")
+
+# Override: agent-full-review label forces full team
+if echo "$ISSUE_LABELS" | grep -qi "agent-full-review"; then
+    COMPLEXITY="full"
+    log_info "Complexity overridden to 'full' by agent-full-review label"
+fi
+
+log_info "Complexity classification: $COMPLEXITY for issue #${ISSUE_NUMBER}"
+
+TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "implement")
+
 # --- Build Mention Context Block ---
 MENTION_BLOCK=""
 if [[ -n "$MENTION_CONTEXT" ]]; then
@@ -146,6 +159,8 @@ FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/implement-issue.txt" \
     "ISSUE_TITLE=$ISSUE_TITLE" \
     "ISSUE_BODY=$ISSUE_BODY" \
     "ISSUE_LABELS=$ISSUE_LABELS" \
+    "COMPLEXITY=$COMPLEXITY" \
+    "TEAM_SIZING_INSTRUCTIONS=$TEAM_INSTRUCTIONS" \
     "MENTION_CONTEXT=$MENTION_BLOCK")
 
 # Write prompt to temp file (avoids tmux send-keys escaping issues)

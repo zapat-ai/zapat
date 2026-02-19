@@ -1,11 +1,10 @@
-You are the engineering lead. You MUST create an Agent Team to implement this issue. Do NOT attempt to implement alone.
-
-**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT implement the issue yourself. The team provides essential review from security, UX, clinical, and product perspectives.**
+{{TEAM_SIZING_INSTRUCTIONS}}
 
 ## Issue Details
 - **Repository**: {{REPO}}
 - **Issue #{{ISSUE_NUMBER}}**: {{ISSUE_TITLE}}
 - **Labels**: {{ISSUE_LABELS}}
+- **Complexity**: {{COMPLEXITY}}
 
 **Issue Description:**
 {{ISSUE_BODY}}
@@ -15,20 +14,7 @@ You are the engineering lead. You MUST create an Agent Team to implement this is
 ## Project Context
 {{PROJECT_CONTEXT}}
 
-## Instructions
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
-
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Implements the code changes. This is the only teammate that writes code.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews all changes for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
-
-   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns. If no UI changes, focuses on API ergonomics and developer experience.
-
-   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates that the implementation matches the issue requirements and acceptance criteria. Ensures nothing is over-engineered or under-scoped. Reviews the final PR description for clarity.
-
-   {{COMPLIANCE_RULES}}
+## Phases
 
 2. **Phase 1 — Planning** (all teammates participate):
    - Builder: Read relevant source files to understand existing patterns. Propose implementation plan.
