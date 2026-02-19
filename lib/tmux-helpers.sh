@@ -6,6 +6,8 @@
 TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
 # Patterns for detecting stuck panes
+# Permission pattern uses exact Claude CLI prompt phrases to avoid false positives
+# from status bar text ("bypass permissions on") and code review output (IAM policies).
 PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
 PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
 PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|wants to use the .* tool|approve this action)"
