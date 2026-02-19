@@ -13,6 +13,7 @@ interface UseProjectResult {
   project: string | undefined
   projectName: string
   projects: ProjectInfo[]
+  defaultProject: string | undefined
   setProject: (slug: string | undefined) => void
   isLoading: boolean
 }
@@ -24,13 +25,19 @@ export function useProject(): UseProjectResult {
 
   const { data: configData, isLoading } = usePolling<{
     projects: ProjectInfo[]
+    defaultProject?: string
   }>({
     url: '/api/config',
     interval: 300_000, // refresh project list every 5 min
   })
 
   const projects = configData?.projects || []
-  const project = searchParams.get('project') || undefined
+  const defaultProject = configData?.defaultProject
+
+  // Distinguish "no ?project param" (use default) from "?project=" (explicit All Projects)
+  const hasExplicitProject = searchParams.has('project')
+  const urlProject = searchParams.get('project') || undefined
+  const project = hasExplicitProject ? urlProject : (urlProject ?? defaultProject)
 
   const projectName = project
     ? projects.find((p) => p.slug === project)?.name || project
@@ -42,7 +49,8 @@ export function useProject(): UseProjectResult {
       if (slug) {
         params.set('project', slug)
       } else {
-        params.delete('project')
+        // Set empty value so hasExplicitProject is true, preventing defaultProject override
+        params.set('project', '')
       }
       const qs = params.toString()
       router.push(qs ? `${pathname}?${qs}` : pathname)
@@ -50,5 +58,5 @@ export function useProject(): UseProjectResult {
     [searchParams, router, pathname],
   )
 
-  return { project, projectName, projects, setProject, isLoading }
+  return { project, projectName, projects, defaultProject, setProject, isLoading }
 }

@@ -1,21 +1,27 @@
 'use client'
 
-import { Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect } from 'react'
 import { StatCard } from '@/components/StatCard'
 import { StatsGrid } from '@/components/StatsGrid'
 import { KanbanBoard } from '@/components/KanbanBoard'
 import { SuccessChart } from '@/components/SuccessChart'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { usePolling } from '@/hooks/usePolling'
+import { useProject } from '@/hooks/useProject'
 import { pipelineConfig } from '../../pipeline.config'
 import type { PipelineItem, ChartDataPoint, SystemStatus } from '@/lib/types'
 
 function OverviewContent() {
-  const searchParams = useSearchParams()
-  const project = searchParams.get('project')
+  const { project, projectName } = useProject()
   const projectParam = project ? `&project=${encodeURIComponent(project)}` : ''
   const projectQuery = project ? `?project=${encodeURIComponent(project)}` : ''
+
+  // Dynamic page title based on project context
+  useEffect(() => {
+    document.title = project
+      ? `${projectName} - Pipeline Dashboard`
+      : 'Zapat - Pipeline Dashboard'
+  }, [project, projectName])
 
   const { data: itemsData, isLoading: itemsLoading } = usePolling<{ items: PipelineItem[] }>({
     url: `/api/items${projectQuery}`,
