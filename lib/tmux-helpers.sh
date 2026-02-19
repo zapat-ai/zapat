@@ -6,6 +6,8 @@
 TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
 # Patterns for detecting stuck panes
+# Permission pattern uses exact Claude CLI prompt phrases to avoid false positives
+# from status bar text ("bypass permissions on") and code review output (IAM policies).
 PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
 PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
 PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|wants to use the .* tool|approve this action)"
@@ -188,7 +190,9 @@ check_pane_health() {
                 "\"type\":\"pane_health\",\"issue\":\"account_rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
 
             # Signal monitor_session to tear down this session
-            echo "rate_limited" > "/tmp/zapat-pane-signal-${window}"
+            local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+            mkdir -p "$(dirname "$signal_file")"
+            echo "rate_limited" > "$signal_file"
 
             if _pane_health_should_notify "$pane_id" "account_rate_limit"; then
                 "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
@@ -280,7 +284,8 @@ monitor_session() {
     local timeout="$2"
     local interval="${3:-15}"
     local job_name="${4:-monitor}"
-    local signal_file="/tmp/zapat-pane-signal-${window}"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
     local start
     start=$(date +%s)
 

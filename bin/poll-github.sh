@@ -247,6 +247,7 @@ scan_mentions() {
         # Route to appropriate trigger (pass project_slug from outer loop via CURRENT_PROJECT)
         # Check dispatch cap (DISPATCH_COUNT/MAX_DISPATCH are global, set in main loop)
         # Do NOT mark as processed here — mention will be retried next cycle
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         if [[ ${DISPATCH_COUNT:-0} -ge ${MAX_DISPATCH:-20} ]]; then
             log_warn "Per-cycle dispatch limit reached — deferring mention on #${item_number}"
             continue
@@ -278,8 +279,10 @@ scan_mentions() {
 # --- Process Repos (per project) ---
 TOTAL_PRS=0
 TOTAL_ISSUES=0
+TOTAL_ITEMS_FOUND=0
 DISPATCH_COUNT=0
 MAX_DISPATCH=${MAX_DISPATCH_PER_CYCLE:-20}
+BACKLOG_WARNING_THRESHOLD=${BACKLOG_WARNING_THRESHOLD:-30}
 
 # Check if we've hit the per-cycle dispatch cap
 DISPATCH_LIMIT_LOGGED=false
@@ -338,6 +341,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing PR: $PR_KEY — $PR_TITLE (project: $project_slug)"
         create_item_state "$repo" "pr" "$PR_NUM" "pending" "$project_slug" || true
@@ -373,6 +377,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing zapat-review: $REVIEW_KEY — $REVIEW_TITLE (project: $project_slug)"
         create_item_state "$repo" "pr" "$REVIEW_NUM" "pending" "$project_slug" || true
@@ -408,6 +413,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing issue: $ISSUE_KEY — $ISSUE_TITLE (project: $project_slug)"
         create_item_state "$repo" "issue" "$ISSUE_NUM" "pending" "$project_slug" || true
@@ -449,6 +455,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing agent-work: $WORK_KEY — $WORK_TITLE (project: $project_slug)"
         create_item_state "$repo" "work" "$WORK_NUM" "pending" "$project_slug" || true
@@ -484,6 +491,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing zapat-rework: $REWORK_KEY — $REWORK_TITLE (project: $project_slug)"
         create_item_state "$repo" "rework" "$REWORK_NUM" "pending" "$project_slug" || true
@@ -513,6 +521,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing zapat-testing: $TEST_KEY — $TEST_TITLE (project: $project_slug)"
         create_item_state "$repo" "test" "$TEST_NUM" "pending" "$project_slug" >/dev/null || true
@@ -547,6 +556,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing agent-write-tests: $WT_KEY — $WT_TITLE (project: $project_slug)"
         create_item_state "$repo" "write-tests" "$WT_NUM" "pending" "$project_slug" || true
@@ -582,6 +592,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
         log_info "Processing agent-research: $RESEARCH_KEY — $RESEARCH_TITLE (project: $project_slug)"
         create_item_state "$repo" "research" "$RESEARCH_NUM" "pending" "$project_slug" || true
@@ -642,6 +653,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
                 continue
             fi
 
+            TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
             dispatch_limit_reached && continue
             log_info "Auto-triage: new issue $AT_KEY — $AT_TITLE (project: $project_slug)"
             create_item_state "$repo" "issue" "$AT_NUM" "pending" "$project_slug" || true
@@ -836,6 +848,17 @@ done < <(read_projects)
 # --- Update Mention Poll Timestamp ---
 if [[ "${ZAPAT_MENTION_ENABLED:-true}" == "true" ]]; then
     date -u '+%Y-%m-%dT%H:%M:%SZ' > "$LAST_MENTION_POLL"
+fi
+
+# --- Backlog Flood Detection ---
+if [[ $TOTAL_ITEMS_FOUND -gt $BACKLOG_WARNING_THRESHOLD ]]; then
+    log_warn "Flood detection: Found $TOTAL_ITEMS_FOUND items across all repos in this cycle (threshold: $BACKLOG_WARNING_THRESHOLD). This may indicate a first-boot scenario or label misconfiguration. Items are capped at MAX_DISPATCH_PER_CYCLE=$MAX_DISPATCH per cycle."
+    _log_structured "warn" "Backlog flood detected" "\"total_items_found\":$TOTAL_ITEMS_FOUND,\"threshold\":$BACKLOG_WARNING_THRESHOLD,\"dispatched\":$DISPATCH_COUNT"
+    "$SCRIPT_DIR/bin/notify.sh" \
+        --slack \
+        --message "Flood detection: Found $TOTAL_ITEMS_FOUND items in a single poll cycle (threshold: $BACKLOG_WARNING_THRESHOLD). Dispatched $DISPATCH_COUNT/$MAX_DISPATCH. This may indicate a first-boot scenario or label misconfiguration." \
+        --job-name "flood-detection" \
+        --status warning 2>/dev/null || true
 fi
 
 # --- Retry Sweep ---

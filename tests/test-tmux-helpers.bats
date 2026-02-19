@@ -176,12 +176,46 @@ teardown() {
 }
 
 # --- Permission pattern tests ---
-# Load the actual pattern from tmux-helpers.sh for testing
+# Load actual patterns from tmux-helpers.sh for testing
 
 _load_permission_pattern() {
-    # Extract the pattern from the real source file
     local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
     PANE_PATTERN_PERMISSION=$(grep '^PANE_PATTERN_PERMISSION=' "$src" | sed 's/^PANE_PATTERN_PERMISSION=//' | tr -d '"')
+}
+
+_load_rate_limit_pattern() {
+    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+    PANE_PATTERN_RATE_LIMIT=$(grep '^PANE_PATTERN_RATE_LIMIT=' "$src" | sed 's/^PANE_PATTERN_RATE_LIMIT=//' | tr -d '"')
+}
+
+_load_account_limit_pattern() {
+    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+    PANE_PATTERN_ACCOUNT_LIMIT=$(grep '^PANE_PATTERN_ACCOUNT_LIMIT=' "$src" | sed 's/^PANE_PATTERN_ACCOUNT_LIMIT=//' | tr -d '"')
+}
+
+_load_fatal_pattern() {
+    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+    PANE_PATTERN_FATAL=$(grep '^PANE_PATTERN_FATAL=' "$src" | sed 's/^PANE_PATTERN_FATAL=//' | tr -d '"')
+}
+
+# -- Motivation: the OLD broad pattern caused false positives --
+# The original regex (Allow|Deny|permission|Do you want to|approve this) matched
+# status bar text like "bypass permissions on" and IAM policy snippets, causing
+# spurious auto-resolves that interrupted working agents. See issue #9.
+
+@test "OLD broad pattern WOULD false-positive on 'bypass permissions on'" {
+    local OLD_PATTERN="(Allow|Deny|permission|Do you want to|approve this)"
+    echo "bypass permissions on" | grep -qE "$OLD_PATTERN"
+}
+
+@test "OLD broad pattern WOULD false-positive on 'Allow s3:GetObject'" {
+    local OLD_PATTERN="(Allow|Deny|permission|Do you want to|approve this)"
+    echo "Allow s3:GetObject" | grep -qE "$OLD_PATTERN"
+}
+
+@test "OLD broad pattern WOULD false-positive on 'Deny access to IAM role'" {
+    local OLD_PATTERN="(Allow|Deny|permission|Do you want to|approve this)"
+    echo "Deny access to IAM role" | grep -qE "$OLD_PATTERN"
 }
 
 # -- True positives: real Claude CLI permission prompts --
@@ -274,6 +308,80 @@ _load_permission_pattern() {
     ! echo "This PR updates the file permissions for the deploy script" | grep -qE "$PANE_PATTERN_PERMISSION"
 }
 
+@test "permission pattern does NOT match 'Deny access to IAM role'" {
+    _load_permission_pattern
+    ! echo "Deny access to IAM role" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+@test "permission pattern does NOT match 'Allow s3:GetObject'" {
+    _load_permission_pattern
+    ! echo "Allow s3:GetObject" | grep -qE "$PANE_PATTERN_PERMISSION"
+}
+
+# --- Signal file path tests ---
+
+@test "signal file is created under state/pane-signals/ not /tmp/" {
+    # Simulate what check_pane_health does when writing a signal file
+    local window="test-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -f "$TEST_DIR/state/pane-signals/signal-test-win" ]]
+    [[ "$(cat "$signal_file")" == "rate_limited" ]]
+    # Must NOT exist in /tmp/
+    [[ ! -f "/tmp/zapat-pane-signal-test-win" ]]
+}
+
+@test "signal file directory is created if missing" {
+    # Ensure the pane-signals dir does not exist yet
+    [[ ! -d "$TEST_DIR/state/pane-signals" ]]
+
+    local window="new-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -d "$TEST_DIR/state/pane-signals" ]]
+    [[ -f "$signal_file" ]]
+}
+
+@test "signal file cleanup removes the file" {
+    local window="cleanup-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    # Simulate cleanup (as done in monitor_session)
+    rm -f "$signal_file"
+
+    [[ ! -f "$signal_file" ]]
+}
+
+@test "signal file path uses AUTOMATION_DIR when set" {
+    local custom_dir="$(mktemp -d)"
+    AUTOMATION_DIR="$custom_dir"
+    local window="custom-dir-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -f "$custom_dir/state/pane-signals/signal-custom-dir-win" ]]
+    rm -rf "$custom_dir"
+    AUTOMATION_DIR="$TEST_DIR"
+}
+
+@test "signal file path falls back to SCRIPT_DIR when AUTOMATION_DIR is unset" {
+    unset AUTOMATION_DIR
+    local window="fallback-win"
+    local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+    mkdir -p "$(dirname "$signal_file")"
+    echo "rate_limited" > "$signal_file"
+
+    [[ -f "$TEST_DIR/state/pane-signals/signal-fallback-win" ]]
+    export AUTOMATION_DIR="$TEST_DIR"
+}
+
 # -- Stale throttle file cleanup tests --
 
 @test "monitor_session cleans stale throttle files older than 10 minutes" {
@@ -296,4 +404,126 @@ _load_permission_pattern() {
     # Stale file should be gone, fresh file should remain
     [[ ! -f "$throttle_dir/old-pane--permission" ]]
     [[ -f "$throttle_dir/fresh-pane--rate_limit" ]]
+}
+
+# --- Rate limit pattern tests ---
+
+@test "rate limit pattern matches 'Switch to extra'" {
+    _load_rate_limit_pattern
+    echo "Switch to extra usage" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Rate limit'" {
+    _load_rate_limit_pattern
+    echo "Rate limit exceeded" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'rate_limit'" {
+    _load_rate_limit_pattern
+    echo "error: rate_limit" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches '429'" {
+    _load_rate_limit_pattern
+    echo "HTTP 429 error" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Too Many Requests'" {
+    _load_rate_limit_pattern
+    echo "Too Many Requests" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Retry after'" {
+    _load_rate_limit_pattern
+    echo "Retry after 30 seconds" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern does NOT match normal output" {
+    _load_rate_limit_pattern
+    ! echo "Switching branches to main" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern does NOT match 'retry logic'" {
+    _load_rate_limit_pattern
+    ! echo "Added retry logic for API calls" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+# --- Account limit pattern tests ---
+
+@test "account limit pattern matches 'out of extra usage'" {
+    _load_account_limit_pattern
+    echo "You are out of extra usage" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'usage limit'" {
+    _load_account_limit_pattern
+    echo "You have reached your usage limit" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'plan limit'" {
+    _load_account_limit_pattern
+    echo "plan limit reached" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'You've reached'" {
+    _load_account_limit_pattern
+    echo "You've reached your monthly cap" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'resets' with digit" {
+    _load_account_limit_pattern
+    echo "Usage resets 5 hours from now" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern does NOT match normal output" {
+    _load_account_limit_pattern
+    ! echo "The deployment plan is ready" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+# --- Fatal error pattern tests ---
+
+@test "fatal pattern matches 'FATAL'" {
+    _load_fatal_pattern
+    echo "FATAL: unable to allocate memory" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'OOM'" {
+    _load_fatal_pattern
+    echo "OOM killer invoked" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'out of memory'" {
+    _load_fatal_pattern
+    echo "error: out of memory" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'Segmentation fault'" {
+    _load_fatal_pattern
+    echo "Segmentation fault (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'core dumped'" {
+    _load_fatal_pattern
+    echo "Aborted (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'panic:'" {
+    _load_fatal_pattern
+    echo "panic: runtime error" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'SIGKILL'" {
+    _load_fatal_pattern
+    echo "Process received SIGKILL" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern does NOT match normal error messages" {
+    _load_fatal_pattern
+    ! echo "Error: file not found" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern does NOT match 'panic button' in docs" {
+    _load_fatal_pattern
+    # 'panic:' requires the colon, so 'panic button' won't match
+    ! echo "Don't hit the panic button" | grep -qE "$PANE_PATTERN_FATAL"
 }
