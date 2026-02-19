@@ -59,16 +59,7 @@ PR_FILES=$(echo "$PR_JSON" | jq -r '.files[].path' 2>/dev/null | head -100 || ec
 # --- Fetch Diff ---
 PR_DIFF=$(gh pr diff "$PR_NUMBER" --repo "$REPO" 2>/dev/null || echo "Unable to fetch diff")
 
-# Truncate diff if too large (first-pass cap before prompt substitution)
-MAX_DIFF_CHARS="${MAX_DIFF_CHARS:-40000}"
-[[ "$MAX_DIFF_CHARS" =~ ^[0-9]+$ ]] || MAX_DIFF_CHARS=40000
-if [[ ${#PR_DIFF} -gt $MAX_DIFF_CHARS ]]; then
-    total_lines=$(echo "$PR_DIFF" | wc -l | tr -d ' ')
-    PR_DIFF="${PR_DIFF:0:$MAX_DIFF_CHARS}
-
---- DIFF TRUNCATED ($total_lines total lines, limit: $MAX_DIFF_CHARS chars) ---
-Full diff available via: gh pr diff $PR_NUMBER --repo $REPO"
-fi
+# Diff truncation is handled centrally in lib/common.sh
 
 # --- Resolve Repo Local Path ---
 REPO_PATH=""

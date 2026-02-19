@@ -647,21 +647,37 @@ substitute_prompt() {
     content="${content//\{\{PROJECT_CONTEXT\}\}/${project_context}}"
     content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
 
-    # Apply explicit overrides
-    local max_diff="${MAX_DIFF_CHARS:-40000}"
-    [[ "$max_diff" =~ ^[0-9]+$ ]] || max_diff=40000
+    # Cap PR_DIFF at configurable limit (~40,000 characters ≈ ~10,000 tokens)
+    local max_diff_chars="${MAX_DIFF_CHARS:-40000}"
+    local pr_number_val="" repo_val=""
+    local -a capped_args=()
     for pair in "$@"; do
         local key="${pair%%=*}"
         local value="${pair#*=}"
-        # Cap PR_DIFF to avoid injecting huge diffs into prompts
-        if [[ "$key" == "PR_DIFF" && ${#value} -gt $max_diff ]]; then
-            local total_lines
-            total_lines=$(echo "$value" | wc -l | tr -d ' ')
-            value="${value:0:$max_diff}
+        case "$key" in
+            PR_NUMBER) pr_number_val="$value" ;;
+            REPO)      repo_val="$value" ;;
+        esac
+        if [[ "$key" == "PR_DIFF" && ${#value} -gt $max_diff_chars ]]; then
+            local total_lines total_chars
+            total_lines=$(printf '%s\n' "$value" | wc -l | tr -d ' ')
+            total_chars=${#value}
+            local shown_lines
+            shown_lines=$(printf '%s' "${value:0:$max_diff_chars}" | wc -l | tr -d ' ')
+            value="${value:0:$max_diff_chars}
 
---- DIFF TRUNCATED ($total_lines total lines, limit: $max_diff chars) ---
-Full diff available via: gh pr diff {{PR_NUMBER}} --repo {{REPO}}"
+--- DIFF TRUNCATED ---
+Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_chars} of ${total_chars} total chars).
+⚠️  Security and code quality reviewers MUST fetch the full diff before reviewing:
+  gh pr diff ${pr_number_val} --repo ${repo_val}"
         fi
+        capped_args+=("${key}=${value}")
+    done
+
+    # Apply explicit overrides
+    for pair in "${capped_args[@]}"; do
+        local key="${pair%%=*}"
+        local value="${pair#*=}"
         content="${content//\{\{${key}\}\}/${value}}"
     done
 

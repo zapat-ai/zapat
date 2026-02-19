@@ -31,15 +31,15 @@ You are the engineering lead. You MUST create an Agent Team to review this PR. D
 
    - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
 
-   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
-     **CONDITIONAL**: Only spawn this agent if the changed files (listed above in "Changed Files") include UI files (*.tsx, *.jsx, *.vue, *.svelte, *.css, *.scss, *.html, *.swift, *.kt). If no UI files are present, skip this agent entirely and note "UX agent skipped — no UI files in changeset" in your review.
+   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews any UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
+     **CONDITIONAL**: Only spawn this agent if {{PR_FILES}} contains UI-related files (*.tsx, *.jsx, *.vue, *.svelte, *.css, *.scss, *.html, *.swift, *.kt). If no UI files are present, skip this agent entirely to save tokens.
 
    {{COMPLIANCE_RULES}}
 
 2. **Team workflow**:
    - Platform engineer: Read surrounding source files for context. Check for memory issues, crash risks, error handling gaps, performance concerns. Evaluate architectural fit.
    - Security reviewer: Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.
-   - UX reviewer: If UI files are changed, evaluate for friction, accessibility, responsive design, and consistency. If no UI changes, report "No UI changes in this PR."
+   - UX reviewer: Evaluate for friction, accessibility, responsive design, and consistency.
    - All teammates send their review to you (the lead). You synthesize into the final review.
 
 3. **Review guidelines — DO NOT flag**:
@@ -68,7 +68,7 @@ You are the engineering lead. You MUST create an Agent Team to review this PR. D
 
 **Code Quality**: Key findings from platform engineer.
 
-**UX Assessment**: Findings from UX reviewer, or "No UI changes."
+**UX Assessment**: Findings from UX reviewer. If UX reviewer was not spawned (no UI files in PR), write: "No UI changes — UX review skipped (no UI files in PR)."
 
 **Test Coverage**: Does this PR include tests for the changed code?
 - If tests are included: briefly describe what they cover
