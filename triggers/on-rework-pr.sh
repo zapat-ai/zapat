@@ -130,6 +130,9 @@ git worktree add "$WORKTREE_DIR" "origin/${PR_BRANCH}" 2>/dev/null || {
 
 log_info "Worktree created at $WORKTREE_DIR on branch $PR_BRANCH"
 
+# --- Copy slim CLAUDE.md into worktree ---
+cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$WORKTREE_DIR/CLAUDE.md"
+
 # --- Build Prompt ---
 FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/rework-pr.txt" \
     "REPO=$REPO" \

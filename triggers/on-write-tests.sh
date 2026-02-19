@@ -109,6 +109,9 @@ git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "origin/${DEFAULT_BRANCH}" 2>
 
 log_info "Worktree created at $WORKTREE_DIR on branch $BRANCH_NAME"
 
+# --- Copy slim CLAUDE.md into worktree ---
+cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$WORKTREE_DIR/CLAUDE.md"
+
 # --- Build Prompt ---
 FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/write-tests.txt" \
     "REPO=$REPO" \
