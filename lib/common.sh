@@ -747,6 +747,7 @@ generate_team_instructions() {
 You are the engineering lead. This is a **solo-complexity** task — small, contained changes.
 
 **Do NOT create a team.** Work alone. Implement the changes yourself directly.
+**Skip Phases 3-4 (Review/Iterate) below** — after implementation and tests, proceed directly to pushing and creating the PR.
 
 ## Instructions
 
@@ -800,6 +801,7 @@ SOLO_REWORK
 You are the engineering lead. This is a **duo-complexity** task — moderate scope.
 
 **Create a SMALL team** with only the builder and one reviewer. Do NOT spawn the full team.
+**Skip Phases 3-4 (Review/Iterate) below** — after the security reviewer approves, proceed directly to pushing and creating the PR.
 
 ## Team (2 agents only)
 
