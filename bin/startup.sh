@@ -7,6 +7,32 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 
+# --- Flag Parsing ---
+FORCE_SEED=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --seed-state)
+            FORCE_SEED=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: bin/startup.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --seed-state  Force re-seed state files with current open issues/PRs"
+            echo "  --help, -h    Show this help message"
+            echo ""
+            echo "Run this script after a reboot or fresh install to initialize"
+            echo "the Zapat pipeline (tmux, cron, state files, dashboard)."
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1 (use --help for usage)"
+            exit 1
+            ;;
+    esac
+done
+
 echo "============================================"
 echo "  Zapat — Startup"
 echo "============================================"
@@ -195,8 +221,19 @@ log_info "State files ready"
 # --- First-boot state bootstrapping ---
 # When state files are empty (fresh install), seed them with all currently
 # open issues/PRs so the poller doesn't treat the entire backlog as new.
-if [[ ! -s "$SCRIPT_DIR/state/processed-issues.txt" ]]; then
-    log_info "First boot detected — seeding existing issues as already processed..."
+# Also triggers when --seed-state is passed (force re-seed).
+if [[ ! -s "$SCRIPT_DIR/state/processed-issues.txt" || "$FORCE_SEED" == "true" ]]; then
+    if [[ "$FORCE_SEED" == "true" && -s "$SCRIPT_DIR/state/processed-issues.txt" ]]; then
+        log_info "Force re-seed requested — backing up existing issue state files..."
+        for f in processed-issues.txt processed-auto-triage.txt processed-work.txt processed-research.txt processed-write-tests.txt; do
+            [[ -s "$SCRIPT_DIR/state/$f" ]] && cp "$SCRIPT_DIR/state/$f" "$SCRIPT_DIR/state/${f}.bak"
+        done
+    fi
+    if [[ "$FORCE_SEED" == "true" ]]; then
+        log_info "Force re-seed — seeding existing issues as already processed..."
+    else
+        log_info "First boot detected — seeding existing issues as already processed..."
+    fi
     SEED_COUNT=0
     while IFS= read -r proj; do
         [[ -z "$proj" ]] && continue
@@ -226,8 +263,18 @@ if [[ ! -s "$SCRIPT_DIR/state/processed-issues.txt" ]]; then
 fi
 
 # Same for PRs (also seeds processed-rework.txt for any open rework PRs)
-if [[ ! -s "$SCRIPT_DIR/state/processed-prs.txt" ]]; then
-    log_info "First boot detected — seeding existing PRs as already processed..."
+if [[ ! -s "$SCRIPT_DIR/state/processed-prs.txt" || "$FORCE_SEED" == "true" ]]; then
+    if [[ "$FORCE_SEED" == "true" && -s "$SCRIPT_DIR/state/processed-prs.txt" ]]; then
+        log_info "Force re-seed requested — backing up existing PR state files..."
+        for f in processed-prs.txt processed-rework.txt; do
+            [[ -s "$SCRIPT_DIR/state/$f" ]] && cp "$SCRIPT_DIR/state/$f" "$SCRIPT_DIR/state/${f}.bak"
+        done
+    fi
+    if [[ "$FORCE_SEED" == "true" ]]; then
+        log_info "Force re-seed — seeding existing PRs as already processed..."
+    else
+        log_info "First boot detected — seeding existing PRs as already processed..."
+    fi
     PR_SEED_COUNT=0
     while IFS= read -r proj; do
         [[ -z "$proj" ]] && continue
