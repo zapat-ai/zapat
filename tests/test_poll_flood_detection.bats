@@ -87,3 +87,53 @@ teardown() {
     [ "$dispatched" -eq 3 ]
     [ "$DISPATCH_COUNT" -eq 3 ]
 }
+
+@test "poller skips cycle when both state files are empty (defense-in-depth)" {
+    # Both files exist but are empty (0 bytes) — simulates unseeded state
+    touch "$AUTOMATION_DIR/state/processed-issues.txt"
+    touch "$AUTOMATION_DIR/state/processed-prs.txt"
+
+    PROCESSED_ISSUES="$AUTOMATION_DIR/state/processed-issues.txt"
+    PROCESSED_PRS="$AUTOMATION_DIR/state/processed-prs.txt"
+
+    # Replicate the guard from poll-github.sh
+    if [[ ! -s "$PROCESSED_ISSUES" && ! -s "$PROCESSED_PRS" ]]; then
+        result="skip"
+    else
+        result="poll"
+    fi
+
+    [ "$result" = "skip" ]
+}
+
+@test "poller proceeds when issues state file has content" {
+    echo "org/repo#1" > "$AUTOMATION_DIR/state/processed-issues.txt"
+    touch "$AUTOMATION_DIR/state/processed-prs.txt"
+
+    PROCESSED_ISSUES="$AUTOMATION_DIR/state/processed-issues.txt"
+    PROCESSED_PRS="$AUTOMATION_DIR/state/processed-prs.txt"
+
+    if [[ ! -s "$PROCESSED_ISSUES" && ! -s "$PROCESSED_PRS" ]]; then
+        result="skip"
+    else
+        result="poll"
+    fi
+
+    [ "$result" = "poll" ]
+}
+
+@test "poller proceeds when PRs state file has content" {
+    touch "$AUTOMATION_DIR/state/processed-issues.txt"
+    echo "org/repo#5" > "$AUTOMATION_DIR/state/processed-prs.txt"
+
+    PROCESSED_ISSUES="$AUTOMATION_DIR/state/processed-issues.txt"
+    PROCESSED_PRS="$AUTOMATION_DIR/state/processed-prs.txt"
+
+    if [[ ! -s "$PROCESSED_ISSUES" && ! -s "$PROCESSED_PRS" ]]; then
+        result="skip"
+    else
+        result="poll"
+    fi
+
+    [ "$result" = "poll" ]
+}

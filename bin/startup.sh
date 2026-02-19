@@ -206,6 +206,8 @@ echo "  Pulled: $PULL_SUCCESS repos, Failed: $PULL_FAIL repos"
 # IMPORTANT: State seeding MUST happen before cron installation to prevent
 # a race where the first poll fires before seeding completes, causing the
 # poller to treat the entire backlog as new items (issue #4).
+# Safety net: poll-github.sh also checks for empty state files and skips
+# the cycle if seeding hasn't run yet (defense-in-depth).
 echo "[6/9] Initializing state files..."
 mkdir -p "$SCRIPT_DIR/state"
 mkdir -p "$SCRIPT_DIR/state/items"
@@ -218,13 +220,17 @@ touch "$SCRIPT_DIR/state/processed-research.txt"
 touch "$SCRIPT_DIR/state/processed-auto-triage.txt"
 log_info "State files ready"
 
+# Track seeding outcome for the summary box
+ISSUES_SEEDED=-1  # -1 = skipped, 0+ = count seeded
+PRS_SEEDED=-1
+
 # --- First-boot state bootstrapping ---
 # When state files are empty (fresh install), seed them with all currently
 # open issues/PRs so the poller doesn't treat the entire backlog as new.
 # Also triggers when --seed-state is passed (force re-seed).
 if [[ ! -s "$SCRIPT_DIR/state/processed-issues.txt" || "$FORCE_SEED" == "true" ]]; then
     if [[ "$FORCE_SEED" == "true" && -s "$SCRIPT_DIR/state/processed-issues.txt" ]]; then
-        log_info "Force re-seed requested — backing up existing issue state files..."
+        log_info "Force re-seed requested — backing up existing issue state files to state/*.bak..."
         for f in processed-issues.txt processed-auto-triage.txt processed-work.txt processed-research.txt processed-write-tests.txt; do
             [[ -s "$SCRIPT_DIR/state/$f" ]] && cp "$SCRIPT_DIR/state/$f" "$SCRIPT_DIR/state/${f}.bak"
         done
@@ -260,12 +266,15 @@ if [[ ! -s "$SCRIPT_DIR/state/processed-issues.txt" || "$FORCE_SEED" == "true" ]
     else
         log_info "Seeded $SEED_COUNT existing issues across all repos"
     fi
+    ISSUES_SEEDED=$SEED_COUNT
+else
+    log_info "Issue state files already seeded — skipping (use --seed-state to force re-seed)"
 fi
 
 # Same for PRs (also seeds processed-rework.txt for any open rework PRs)
 if [[ ! -s "$SCRIPT_DIR/state/processed-prs.txt" || "$FORCE_SEED" == "true" ]]; then
     if [[ "$FORCE_SEED" == "true" && -s "$SCRIPT_DIR/state/processed-prs.txt" ]]; then
-        log_info "Force re-seed requested — backing up existing PR state files..."
+        log_info "Force re-seed requested — backing up existing PR state files to state/*.bak..."
         for f in processed-prs.txt processed-rework.txt; do
             [[ -s "$SCRIPT_DIR/state/$f" ]] && cp "$SCRIPT_DIR/state/$f" "$SCRIPT_DIR/state/${f}.bak"
         done
@@ -295,6 +304,9 @@ if [[ ! -s "$SCRIPT_DIR/state/processed-prs.txt" || "$FORCE_SEED" == "true" ]]; 
     else
         log_info "Seeded $PR_SEED_COUNT existing PRs across all repos"
     fi
+    PRS_SEEDED=$PR_SEED_COUNT
+else
+    log_info "PR state files already seeded — skipping (use --seed-state to force re-seed)"
 fi
 
 # --- Step 8: Install Crontab ---
@@ -379,8 +391,20 @@ echo ""
 echo "  tmux session:  zapat"
 echo "  Repos pulled:  $PULL_SUCCESS / $((PULL_SUCCESS + PULL_FAIL))"
 echo "  Cron jobs:     8 installed"
-echo "  Dashboard:     http://${DASHBOARD_HOST:-127.0.0.1}:${DASHBOARD_PORT:-8080}"
-echo "  State files:   initialized (seeded before cron)"
+echo "  Dashboard:     http://$(hostname):${DASHBOARD_PORT:-8080}"
+# Build dynamic state file summary
+if [[ $ISSUES_SEEDED -ge 0 || $PRS_SEEDED -ge 0 ]]; then
+    SEED_PARTS=""
+    [[ $ISSUES_SEEDED -ge 0 ]] && SEED_PARTS="${ISSUES_SEEDED} issues"
+    [[ $PRS_SEEDED -ge 0 ]] && SEED_PARTS="${SEED_PARTS:+${SEED_PARTS}, }${PRS_SEEDED} PRs"
+    if [[ "$FORCE_SEED" == "true" ]]; then
+        echo "  State files:   re-seeded (${SEED_PARTS})"
+    else
+        echo "  State files:   seeded (${SEED_PARTS})"
+    fi
+else
+    echo "  State files:   already initialized"
+fi
 echo ""
 echo "  Verify cron:   crontab -l"
 echo "  View logs:     ls ${SCRIPT_DIR}/logs/"

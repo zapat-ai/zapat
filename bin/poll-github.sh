@@ -113,6 +113,17 @@ PROCESSED_REBASE="$STATE_DIR/processed-rebase.txt"
 LAST_MENTION_POLL="$STATE_DIR/last-mention-poll.txt"
 touch "$PROCESSED_PRS" "$PROCESSED_ISSUES" "$PROCESSED_WORK" "$PROCESSED_REWORK" "$PROCESSED_WRITE_TESTS" "$PROCESSED_RESEARCH" "$PROCESSED_MENTIONS" "$PROCESSED_AUTO_TRIAGE" "$PROCESSED_REBASE"
 
+# --- Defense-in-depth: detect unseeded state files ---
+# If processed-issues.txt AND processed-prs.txt are both empty, startup.sh
+# hasn't seeded yet. Polling now would treat every open item as new (issue #4).
+if [[ ! -s "$PROCESSED_ISSUES" && ! -s "$PROCESSED_PRS" ]]; then
+    log_warn "State files are empty — startup.sh may not have seeded yet. Skipping poll cycle to prevent flood."
+    log_warn "Run: bin/startup.sh (or bin/startup.sh --seed-state) to initialize state."
+    _log_structured "warn" "Poll skipped: empty state files (unseeded)" \
+        "\"type\":\"flood_prevention\",\"reason\":\"empty_state_files\""
+    exit 0
+fi
+
 # --- Governance Check ---
 # Returns 0 if item should be processed, 1 if it should be skipped
 should_process() {
@@ -856,7 +867,7 @@ if [[ $TOTAL_ITEMS_FOUND -gt $BACKLOG_WARNING_THRESHOLD ]]; then
     _log_structured "warn" "Backlog flood detected" "\"total_items_found\":$TOTAL_ITEMS_FOUND,\"threshold\":$BACKLOG_WARNING_THRESHOLD,\"dispatched\":$DISPATCH_COUNT"
     "$SCRIPT_DIR/bin/notify.sh" \
         --slack \
-        --message "Flood detection: Found $TOTAL_ITEMS_FOUND items in a single poll cycle (threshold: $BACKLOG_WARNING_THRESHOLD). Dispatched $DISPATCH_COUNT/$MAX_DISPATCH. This may indicate a first-boot scenario or label misconfiguration." \
+        --message "Flood detection: Found $TOTAL_ITEMS_FOUND items in a single poll cycle (threshold: $BACKLOG_WARNING_THRESHOLD). Dispatched $DISPATCH_COUNT/$MAX_DISPATCH. This may indicate a first-boot scenario or label misconfiguration. If first boot, this self-resolves over subsequent cycles (batched at $MAX_DISPATCH/cycle). If unexpected, check labels with: bin/zapat health" \
         --job-name "flood-detection" \
         --status warning 2>/dev/null || true
 fi

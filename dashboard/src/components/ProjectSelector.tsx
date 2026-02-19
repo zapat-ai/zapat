@@ -157,7 +157,7 @@ export function ProjectSelector({ className }: { className?: string }) {
           role="listbox"
           aria-label="Select project"
           aria-activedescendant={focusIndex >= 0 ? `project-option-${focusIndex}` : undefined}
-          className="absolute top-full z-50 mt-1 min-w-[180px] max-w-[260px] max-h-[280px] overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800 right-0 lg:right-auto lg:left-0"
+          className="absolute right-0 lg:left-0 lg:right-auto top-full z-50 mt-1 min-w-[180px] max-h-[280px] overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
         >
           {options.map((opt, idx) => {
             const isSelected = opt.slug === project || (!opt.slug && !project)
