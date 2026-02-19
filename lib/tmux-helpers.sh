@@ -38,13 +38,14 @@ wait_for_tmux_content() {
 }
 
 # Launch a Claude session in a tmux window with readiness detection
-# Usage: launch_claude_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars]
+# Usage: launch_claude_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars] [agent_model]
 # Returns: 0 if session launched and prompt submitted, 1 on failure
 launch_claude_session() {
     local window="$1"
     local workdir="$2"
     local prompt_file="$3"
     local extra_env="${4:-}"
+    local model="${5:-${CLAUDE_MODEL:-claude-opus-4-6}}"
 
     # Validate inputs
     if [[ ! -d "$workdir" ]]; then
@@ -67,7 +68,7 @@ launch_claude_session() {
     if [[ -n "$extra_env" ]]; then
         cmd+="$extra_env "
     fi
-    cmd+="claude --model ${CLAUDE_MODEL:-claude-opus-4-6} "
+    cmd+="claude --model $model "
     cmd+="--dangerously-skip-permissions; "
     cmd+="exit"
 

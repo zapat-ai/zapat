@@ -17,5 +17,6 @@ while IFS= read -r project_slug; do
         --allowed-tools "Bash,Read,Glob,Grep,WebSearch" \
         --notify slack \
         --timeout "${TIMEOUT_MONTHLY_STRATEGY:-1200}" \
+        --model "${CLAUDE_UTILITY_MODEL:-claude-haiku-4-5-20251001}" \
         --project "$project_slug"
 done < <(read_projects)

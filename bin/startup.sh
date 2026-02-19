@@ -315,7 +315,7 @@ NEW_CRON="${EXISTING_CRON}
 # GitHub polling (configurable via POLL_INTERVAL_MINUTES, default 2)
 */${POLL_INTERVAL_MINUTES:-2} * * * * ${SCRIPT_DIR}/bin/poll-github.sh >> ${SCRIPT_DIR}/logs/cron-poll.log 2>&1
 # Weekly security scan Sunday 6 AM
-0 6 * * 0 ${SCRIPT_DIR}/bin/run-agent.sh --job-name weekly-security-scan --prompt-file ${SCRIPT_DIR}/prompts/weekly-security-scan.txt --budget \${MAX_BUDGET_SECURITY_SCAN:-15} --allowed-tools Read,Glob,Grep,Bash --timeout 1800 --notify slack >> ${SCRIPT_DIR}/logs/cron-security.log 2>&1
+0 6 * * 0 ${SCRIPT_DIR}/bin/run-agent.sh --job-name weekly-security-scan --prompt-file ${SCRIPT_DIR}/prompts/weekly-security-scan.txt --model \${CLAUDE_UTILITY_MODEL:-claude-haiku-4-5-20251001} --budget \${MAX_BUDGET_SECURITY_SCAN:-15} --allowed-tools Read,Glob,Grep,Bash --timeout 1800 --notify slack >> ${SCRIPT_DIR}/logs/cron-security.log 2>&1
 # Daily health digest at 8:05 AM
 5 8 * * * cd ${SCRIPT_DIR} && node bin/zapat status --slack >> ${SCRIPT_DIR}/logs/cron-digest.log 2>&1
 # Log rotation weekly Sunday 3 AM

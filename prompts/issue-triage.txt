@@ -28,6 +28,8 @@ You are the engineering lead. You MUST create an Agent Team to triage this issue
 
    {{COMPLIANCE_RULES}}
 
+   **Model Selection:** Spawn each sub-agent teammate using `model: "sonnet"` in the Task tool call (or use the value of the `CLAUDE_SUBAGENT_MODEL` environment variable if set). The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
 2. **Team workflow**:
    - Engineer: Read relevant source files to understand the current state. Report which files are affected, estimate complexity (Small/Medium/Large), and suggest a technical approach.
    - Product manager: Assess priority (P0-P3), user impact, and whether this aligns with product goals. Consider trade-offs.

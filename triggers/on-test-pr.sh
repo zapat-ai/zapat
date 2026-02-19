@@ -129,7 +129,7 @@ else
 fi
 START_TIME=$(date +%s)
 
-launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE"
+launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "${CLAUDE_UTILITY_MODEL:-claude-haiku-4-5-20251001}"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---

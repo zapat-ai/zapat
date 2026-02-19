@@ -21,6 +21,7 @@ Options:
   --notify CHANNEL          Notification channels: slack, github, or both (comma-separated)
   --github-comment REPO#NUM GitHub comment target (e.g., owner/repo#123)
   --timeout SECONDS         Max runtime in seconds (default: 600)
+  --model MODEL             Override Claude model for this invocation
   --project SLUG            Target a specific project (loads project.env overrides)
   --substitutions K=V...    Prompt placeholder substitutions (repeatable)
   -h, --help                Show this help
@@ -42,6 +43,7 @@ ALLOWED_TOOLS="Read,Glob,Grep"
 NOTIFY_CHANNELS=""
 GITHUB_TARGET=""
 TIMEOUT=600
+AGENT_MODEL=""
 PROJECT=""
 SUBSTITUTIONS=()
 
@@ -78,6 +80,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --timeout)
             TIMEOUT="$2"
+            shift 2
+            ;;
+        --model)
+            AGENT_MODEL="$2"
             shift 2
             ;;
         --project)
@@ -164,8 +170,10 @@ mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date '+%Y-%m-%d-%H%M%S')
 LOG_FILE="${LOG_DIR}/${JOB_NAME}-${TIMESTAMP}.log"
 
+EFFECTIVE_MODEL="${AGENT_MODEL:-${CLAUDE_MODEL:-claude-opus-4-6}}"
+
 log_info "Starting job: $JOB_NAME"
-log_info "Model: ${CLAUDE_MODEL:-claude-opus-4-6}"
+log_info "Model: $EFFECTIVE_MODEL"
 log_info "Budget: \$${BUDGET}"
 log_info "Timeout: ${TIMEOUT}s"
 log_info "Log: $LOG_FILE"
@@ -190,7 +198,7 @@ fi
 
 CLAUDE_OUTPUT=$($TIMEOUT_CMD "${TIMEOUT}" claude \
     -p "$(cat "$PROMPT_TMPFILE")" \
-    --model "${CLAUDE_MODEL:-claude-opus-4-6}" \
+    --model "$EFFECTIVE_MODEL" \
     --allowedTools "$ALLOWED_TOOLS" \
     --max-budget-usd "$BUDGET" \
     2>&1) || CLAUDE_EXIT=$?
@@ -200,7 +208,7 @@ CLAUDE_OUTPUT=$($TIMEOUT_CMD "${TIMEOUT}" claude \
     echo "=== Zapat ==="
     echo "Job: $JOB_NAME"
     echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "Model: ${CLAUDE_MODEL:-claude-opus-4-6}"
+    echo "Model: $EFFECTIVE_MODEL"
     echo "Budget: \$${BUDGET}"
     echo "Exit Code: $CLAUDE_EXIT"
     echo "==================================="
