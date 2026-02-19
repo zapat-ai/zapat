@@ -148,6 +148,8 @@ log_info "Complexity classification: $COMPLEXITY for rework PR #${PR_NUMBER}"
 _log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"rework\",\"pr\":$PR_NUMBER,\"repo\":\"$REPO\""
 
 TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "rework")
+# --- Copy slim CLAUDE.md into worktree ---
+cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$WORKTREE_DIR/CLAUDE.md"
 
 # --- Build Prompt ---
 FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/rework-pr.txt" \

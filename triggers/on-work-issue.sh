@@ -142,6 +142,8 @@ log_info "Complexity classification: $COMPLEXITY for issue #${ISSUE_NUMBER}"
 _log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"implement\",\"issue\":$ISSUE_NUMBER,\"repo\":\"$REPO\""
 
 TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "implement")
+# --- Copy slim CLAUDE.md into worktree ---
+cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$WORKTREE_DIR/CLAUDE.md"
 
 # --- Build Mention Context Block ---
 MENTION_BLOCK=""

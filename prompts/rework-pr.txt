@@ -19,6 +19,29 @@
 {{PROJECT_CONTEXT}}
 
 ## Workflow
+## Instructions
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
+
+   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Addresses ALL review feedback by making code changes. This is the only teammate that writes code.
+
+   **Team sizing — read the review feedback below and decide:**
+   - If ALL feedback is only style/formatting nits (naming, whitespace, comment wording): builder works solo — no team needed.
+   - If ANY feedback mentions security concerns, vulnerabilities, or auth issues: include **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`).
+   - If ANY feedback questions requirements, scope, or acceptance criteria: include **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`).
+   - Default: builder works solo to address the rework.
+
+   Classify the feedback BEFORE spawning teammates. Announce your classification: "Feedback classification: [style-only|security-concern|scope-question|mixed]. Team: [solo|+security|+product|+security+product]."
+
+   **Team sizing based on feedback type:**
+   Before spawning the full team, analyze the review feedback:
+   - If feedback is ONLY style/formatting nits (naming, whitespace, comments): work solo — no team needed, just the builder
+   - If feedback mentions security concerns (vulnerabilities, auth, injection, secrets): include security-reviewer
+   - If feedback questions requirements, scope, or acceptance criteria: include product-manager
+   - Default: builder solo handles the rework
+
+   This prevents spawning a full 3-agent team for trivial one-line fixes.
 
 2. **Team workflow**:
 
@@ -34,7 +57,8 @@
    - Commit SEPARATELY from blocking fixes with message: `refactor: implement review suggestions on PR #{{PR_NUMBER}}`
    - This separate commit allows reverting suggestions independently if needed.
 
-   **Phase 3 — Review:**
+   **Phase 3 — Review** (skip if working solo):
+   If you spawned additional reviewers, proceed below. If the builder is working alone, skip to shutting down the team.
    - Security reviewer: After builder pushes both commits, verify all security-related feedback was correctly addressed. Check that new commits didn't introduce new issues.
    - Product manager: After builder pushes, verify the original acceptance criteria are still met and no regressions were introduced. Confirm both blocking issues AND suggestions were addressed.
    - All send their assessment to you (the lead).

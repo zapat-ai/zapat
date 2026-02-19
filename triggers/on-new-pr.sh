@@ -62,12 +62,7 @@ PR_FILES_CHANGED=$(echo "$PR_JSON" | jq -r '.files | length' 2>/dev/null || echo
 # --- Fetch Diff ---
 PR_DIFF=$(gh pr diff "$PR_NUMBER" --repo "$REPO" 2>/dev/null || echo "Unable to fetch diff")
 
-# Truncate diff if too large (50K chars)
-if [[ ${#PR_DIFF} -gt 50000 ]]; then
-    PR_DIFF="${PR_DIFF:0:49000}
-
-... (diff truncated at 50K chars — review full diff on GitHub)"
-fi
+# Diff truncation is handled centrally in lib/common.sh
 
 # --- Resolve Repo Local Path ---
 REPO_PATH=""
@@ -120,6 +115,8 @@ log_info "Complexity classification: $COMPLEXITY for PR #${PR_NUMBER}"
 _log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"review\",\"pr\":$PR_NUMBER,\"repo\":\"$REPO\""
 
 TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "review")
+# --- Copy slim CLAUDE.md into worktree ---
+cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$EFFECTIVE_PATH/CLAUDE.md"
 
 # --- Build Mention Context Block ---
 MENTION_BLOCK=""

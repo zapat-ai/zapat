@@ -647,8 +647,35 @@ substitute_prompt() {
     content="${content//\{\{PROJECT_CONTEXT\}\}/${project_context}}"
     content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
 
-    # Apply explicit overrides
+    # Cap PR_DIFF at configurable limit (~40,000 characters ≈ ~10,000 tokens)
+    local max_diff_chars="${MAX_DIFF_CHARS:-40000}"
+    local pr_number_val="" repo_val=""
+    local -a capped_args=()
     for pair in "$@"; do
+        local key="${pair%%=*}"
+        local value="${pair#*=}"
+        case "$key" in
+            PR_NUMBER) pr_number_val="$value" ;;
+            REPO)      repo_val="$value" ;;
+        esac
+        if [[ "$key" == "PR_DIFF" && ${#value} -gt $max_diff_chars ]]; then
+            local total_lines total_chars
+            total_lines=$(printf '%s\n' "$value" | wc -l | tr -d ' ')
+            total_chars=${#value}
+            local shown_lines
+            shown_lines=$(printf '%s' "${value:0:$max_diff_chars}" | wc -l | tr -d ' ')
+            value="${value:0:$max_diff_chars}
+
+--- DIFF TRUNCATED ---
+Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_chars} of ${total_chars} total chars).
+⚠️  Security and code quality reviewers MUST fetch the full diff before reviewing:
+  gh pr diff ${pr_number_val} --repo ${repo_val}"
+        fi
+        capped_args+=("${key}=${value}")
+    done
+
+    # Apply explicit overrides
+    for pair in "${capped_args[@]}"; do
         local key="${pair%%=*}"
         local value="${pair#*=}"
         content="${content//\{\{${key}\}\}/${value}}"
