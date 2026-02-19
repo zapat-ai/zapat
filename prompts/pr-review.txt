@@ -31,7 +31,8 @@ You are the engineering lead. You MUST create an Agent Team to review this PR. D
 
    - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
 
-   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews any UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
+   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
+     **CONDITIONAL**: Only spawn this agent if the changed files (listed above in "Changed Files") include UI files (*.tsx, *.jsx, *.vue, *.svelte, *.css, *.scss, *.html, *.swift, *.kt). If no UI files are present, skip this agent entirely and note "UX agent skipped — no UI files in changeset" in your review.
 
    {{COMPLIANCE_RULES}}
 

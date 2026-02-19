@@ -26,9 +26,13 @@ You are the engineering lead. You MUST create an Agent Team to address review fe
    - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
      Addresses ALL review feedback by making code changes. This is the only teammate that writes code.
 
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Re-reviews all changes for security vulnerabilities. Validates that security-related feedback was addressed correctly.
+   **Team sizing — read the review feedback below and decide:**
+   - If ALL feedback is only style/formatting nits (naming, whitespace, comment wording): builder works solo — no team needed.
+   - If ANY feedback mentions security concerns, vulnerabilities, or auth issues: include **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`).
+   - If ANY feedback questions requirements, scope, or acceptance criteria: include **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`).
+   - Default: builder works solo to address the rework.
 
-   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Verifies that the reworked changes still meet the original requirements. Ensures feedback was addressed without scope creep or regression.
+   Classify the feedback BEFORE spawning teammates. Announce your classification: "Feedback classification: [style-only|security-concern|scope-question|mixed]. Team: [solo|+security|+product|+security+product]."
 
 2. **Team workflow**:
 

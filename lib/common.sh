@@ -648,9 +648,20 @@ substitute_prompt() {
     content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
 
     # Apply explicit overrides
+    local max_diff="${MAX_DIFF_CHARS:-40000}"
+    [[ "$max_diff" =~ ^[0-9]+$ ]] || max_diff=40000
     for pair in "$@"; do
         local key="${pair%%=*}"
         local value="${pair#*=}"
+        # Cap PR_DIFF to avoid injecting huge diffs into prompts
+        if [[ "$key" == "PR_DIFF" && ${#value} -gt $max_diff ]]; then
+            local total_lines
+            total_lines=$(echo "$value" | wc -l | tr -d ' ')
+            value="${value:0:$max_diff}
+
+--- DIFF TRUNCATED ($total_lines total lines, limit: $max_diff chars) ---
+Full diff available via: gh pr diff {{PR_NUMBER}} --repo {{REPO}}"
+        fi
         content="${content//\{\{${key}\}\}/${value}}"
     done
 
