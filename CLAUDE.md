@@ -20,6 +20,7 @@ If already configured, run `/pipeline-check` or `/zapat:pipeline-check` to verif
 | `agent-write-tests` | Write tests for the specified code |
 | `hold` | Block auto-merge on this PR |
 | `human-only` | Pipeline should not touch this |
+| `agent-full-review` | Force full team review regardless of complexity |
 
 Status labels are managed automatically by the pipeline:
 

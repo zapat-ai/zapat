@@ -117,6 +117,7 @@ if echo "$PR_LABELS" | grep -qiw "agent-full-review"; then
 fi
 
 log_info "Complexity classification: $COMPLEXITY for PR #${PR_NUMBER}"
+_log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"review\",\"pr\":$PR_NUMBER,\"repo\":\"$REPO\""
 
 TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "review")
 

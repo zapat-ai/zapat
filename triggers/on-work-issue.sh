@@ -139,6 +139,7 @@ if echo "$ISSUE_LABELS" | grep -qiw "agent-full-review"; then
 fi
 
 log_info "Complexity classification: $COMPLEXITY for issue #${ISSUE_NUMBER}"
+_log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"implement\",\"issue\":$ISSUE_NUMBER,\"repo\":\"$REPO\""
 
 TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "implement")
 

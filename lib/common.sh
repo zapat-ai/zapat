@@ -731,6 +731,10 @@ classify_complexity() {
 # Usage: generate_team_instructions COMPLEXITY JOB_TYPE
 #   COMPLEXITY: "solo" | "duo" | "full"
 #   JOB_TYPE: "implement" | "review" | "rework"
+#
+# NOTE: The output contains {{PLACEHOLDER}} tokens (e.g. {{BUILDER_AGENT}},
+# {{PR_NUMBER}}). These are intentional — they will be resolved downstream
+# by substitute_prompt() when the full prompt is assembled.
 generate_team_instructions() {
     local complexity="${1:-full}"
     local job_type="${2:-implement}"
