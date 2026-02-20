@@ -105,17 +105,34 @@ launch_claude_session() {
     local perm_timeout=$(( ${TMUX_PERMISSIONS_TIMEOUT:-30} * scale_factor ))
     local ready_timeout=$(( ${TMUX_READINESS_TIMEOUT:-30} * scale_factor ))
 
-    # Step 1: Wait for the --dangerously-skip-permissions confirmation prompt
-    # Claude CLI shows "Do you trust the files" or similar prompt
-    if ! wait_for_tmux_content "$window" "(Yes|trust|skip permissions|dangerously)" "$perm_timeout"; then
-        log_warn "Permissions prompt not detected, trying anyway..."
-        sleep 5
+    # Step 1: Check if a --dangerously-skip-permissions confirmation dialog appears.
+    # Claude Code v2.1.49+ skips this dialog and starts directly in bypass mode.
+    # Older versions show a "Do you trust the files" prompt requiring Down+Enter.
+    local perm_content
+    if wait_for_tmux_content "$window" "(Yes|trust|skip permissions|dangerously)" "$perm_timeout"; then
+        perm_content=$(tmux capture-pane -pt "${TMUX_SESSION}:${window}" -S -20 2>/dev/null)
+        if echo "$perm_content" | grep -qE "(bypass permissions on|❯)"; then
+            # Already in bypass mode — no confirmation dialog, skip Step 2
+            log_info "Session started directly in bypass mode (no confirmation dialog needed)"
+        else
+            # Old-style confirmation dialog detected — accept it
+            log_info "Permissions confirmation dialog detected, accepting..."
+            tmux send-keys -t "${TMUX_SESSION}:${window}" Down
+            sleep 1
+            tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
+        fi
+    else
+        # Timed out waiting — check if already in bypass mode before sending keys
+        perm_content=$(tmux capture-pane -pt "${TMUX_SESSION}:${window}" -S -20 2>/dev/null)
+        if echo "$perm_content" | grep -qE "bypass permissions on"; then
+            log_info "Session already in bypass mode (confirmation dialog not needed)"
+        else
+            log_warn "Permissions prompt not detected and not in bypass mode, trying confirmation anyway..."
+            tmux send-keys -t "${TMUX_SESSION}:${window}" Down
+            sleep 1
+            tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
+        fi
     fi
-
-    # Step 2: Accept the confirmation (Down arrow to select "Yes", Enter to confirm)
-    tmux send-keys -t "${TMUX_SESSION}:${window}" Down
-    sleep 1
-    tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
 
     # Step 3: Wait for Claude to be ready (look for the input prompt indicator)
     if ! wait_for_tmux_content "$window" "(>|Claude|Type|message|\\$)" "$ready_timeout"; then
