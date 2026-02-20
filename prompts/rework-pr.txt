@@ -34,15 +34,6 @@ You are the engineering lead. You MUST create an Agent Team to address review fe
 
    Classify the feedback BEFORE spawning teammates. Announce your classification: "Feedback classification: [style-only|security-concern|scope-question|mixed]. Team: [solo|+security|+product|+security+product]."
 
-   **Team sizing based on feedback type:**
-   Before spawning the full team, analyze the review feedback:
-   - If feedback is ONLY style/formatting nits (naming, whitespace, comments): work solo — no team needed, just the builder
-   - If feedback mentions security concerns (vulnerabilities, auth, injection, secrets): include security-reviewer
-   - If feedback questions requirements, scope, or acceptance criteria: include product-manager
-   - Default: builder solo handles the rework
-
-   This prevents spawning a full 3-agent team for trivial one-line fixes.
-
 2. **Team workflow**:
 
    **Phase 1 — Blocking Issues (must fix):**
