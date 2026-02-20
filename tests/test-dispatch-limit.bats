@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for per-cycle dispatch cap in poll-github.sh
 
+load '../node_modules/bats-support/load'
+load '../node_modules/bats-assert/load'
+
 setup() {
     export TEST_DIR="$(mktemp -d)"
 }
@@ -20,7 +23,8 @@ teardown() {
         return 1
     }
 
-    ! dispatch_limit_reached
+    run dispatch_limit_reached
+    assert_failure
 }
 
 @test "dispatch_limit_reached returns 0 when at limit" {
@@ -34,7 +38,8 @@ teardown() {
         return 1
     }
 
-    dispatch_limit_reached
+    run dispatch_limit_reached
+    assert_success
 }
 
 @test "dispatch_limit_reached returns 0 when over limit" {
@@ -48,19 +53,20 @@ teardown() {
         return 1
     }
 
-    dispatch_limit_reached
+    run dispatch_limit_reached
+    assert_success
 }
 
 @test "MAX_DISPATCH defaults to 20 via MAX_DISPATCH_PER_CYCLE" {
     unset MAX_DISPATCH_PER_CYCLE
     MAX_DISPATCH=${MAX_DISPATCH_PER_CYCLE:-20}
-    [[ $MAX_DISPATCH -eq 20 ]]
+    assert [ "$MAX_DISPATCH" -eq 20 ]
 }
 
 @test "MAX_DISPATCH respects MAX_DISPATCH_PER_CYCLE override" {
     MAX_DISPATCH_PER_CYCLE=5
     MAX_DISPATCH=${MAX_DISPATCH_PER_CYCLE:-20}
-    [[ $MAX_DISPATCH -eq 5 ]]
+    assert [ "$MAX_DISPATCH" -eq 5 ]
 }
 
 @test "dispatch counter increments correctly" {
@@ -83,6 +89,6 @@ teardown() {
         dispatched=$((dispatched + 1))
     done
 
-    [[ $dispatched -eq 3 ]]
-    [[ $DISPATCH_COUNT -eq 3 ]]
+    assert [ "$dispatched" -eq 3 ]
+    assert [ "$DISPATCH_COUNT" -eq 3 ]
 }
