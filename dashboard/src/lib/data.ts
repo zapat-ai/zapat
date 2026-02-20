@@ -597,7 +597,9 @@ export function getGitHubActivity(days: number = 7, project?: string): GitHubEve
             if (body.startsWith('## PR Review') || body.startsWith('## Agent Review Complete')) {
               // Extract first non-empty line after the heading as summary
               const lines = body.split('\n').map((l: string) => l.trim()).filter(Boolean)
-              const summary = lines.find((l: string) => !l.startsWith('#') && !l.startsWith('---'))
+              const summary = lines.find((l: string) =>
+                !l.startsWith('#') && !l.startsWith('---') && !l.startsWith('**') && l.length > 5
+              )
               events.push({
                 id: `${repo}-pr-reviewed-${pr.number}-${comment.createdAt}`,
                 type: 'pr_reviewed',
@@ -633,7 +635,9 @@ export function getGitHubActivity(days: number = 7, project?: string): GitHubEve
               body.includes('<!-- zapat:')
             ) {
               const lines = body.split('\n').map((l: string) => l.trim()).filter(Boolean)
-              const summary = lines.find((l: string) => !l.startsWith('#') && !l.startsWith('<!--'))
+              const summary = lines.find((l: string) =>
+                !l.startsWith('#') && !l.startsWith('<!--') && !l.startsWith('**') && l.length > 5
+              )
               const isResearch = body.startsWith('## Research')
               events.push({
                 id: `${repo}-issue-${isResearch ? 'researched' : 'triaged'}-${issue.number}-${comment.createdAt}`,
