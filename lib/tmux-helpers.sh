@@ -72,7 +72,8 @@ launch_claude_session() {
         cmd+="$extra_env "
     fi
     cmd+="claude --model '${model}' "
-    cmd+="--dangerously-skip-permissions; "
+    cmd+="--dangerously-skip-permissions "
+    cmd+="--permission-mode bypassPermissions; "
     cmd+="exit"
 
     # Create new tmux window

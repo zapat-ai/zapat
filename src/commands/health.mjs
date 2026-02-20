@@ -20,6 +20,7 @@ function runHealth(opts, cmd) {
 
   checks.push(checkTmuxSession(opts.autoFix));
   checks.push(checkOrphanedWindows(opts.autoFix));
+  checks.push(checkStuckPanes(opts.autoFix));
   checks.push(checkStaleSlots(opts.autoFix));
   checks.push(checkOrphanedWorktrees(opts.autoFix));
   checks.push(checkGhAuth());
@@ -124,6 +125,65 @@ function checkOrphanedWindows(autoFix) {
     name: 'orphaned-windows',
     status: 'error',
     message: `${orphaned.length} orphaned window(s): ${orphaned.map(w => w.name).join(', ')}`
+  };
+}
+
+function checkStuckPanes(autoFix) {
+  // Patterns mirrored from lib/tmux-helpers.sh PANE_PATTERN_* constants
+  const PATTERN_PERMISSION = /Allow once|Allow always|Do you want to allow|Do you want to (create|make|proceed|run|write|edit)|wants to use the .* tool|approve this action|Waiting for team lead approval/;
+  const PATTERN_RATE_LIMIT = /Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after/;
+  const PATTERN_ACCOUNT_LIMIT = /out of extra usage|resets [0-9]|usage limit|plan limit|You've reached/;
+  const PATTERN_FATAL = /FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL/;
+
+  const paneList = exec('tmux list-panes -a -t zapat -F "#{window_name}.#{pane_index}" 2>/dev/null');
+  if (!paneList) {
+    return { name: 'stuck-panes', status: 'ok', message: 'No panes to check' };
+  }
+
+  const panes = paneList.split('\n').filter(Boolean);
+  const stuck = [];
+
+  for (const paneId of panes) {
+    // Skip the control/bash window
+    const windowName = paneId.split('.')[0];
+    if (windowName === 'bash' || windowName === 'control') continue;
+
+    const content = exec(`tmux capture-pane -t "zapat:${paneId}" -p -l 50 2>/dev/null`);
+    if (!content) continue;
+
+    let issue = null;
+    if (PATTERN_PERMISSION.test(content)) issue = 'permission prompt';
+    else if (PATTERN_RATE_LIMIT.test(content)) issue = 'rate limit';
+    else if (PATTERN_ACCOUNT_LIMIT.test(content)) issue = 'account limit';
+    else if (PATTERN_FATAL.test(content)) issue = 'fatal error';
+
+    if (issue) {
+      stuck.push({ paneId, issue });
+    }
+  }
+
+  if (stuck.length === 0) {
+    return { name: 'stuck-panes', status: 'ok', message: 'No stuck panes' };
+  }
+
+  if (autoFix) {
+    // Kill the windows containing stuck panes
+    const killedWindows = new Set();
+    for (const s of stuck) {
+      const windowName = s.paneId.split('.')[0];
+      if (!killedWindows.has(windowName)) {
+        exec(`tmux kill-window -t "zapat:${windowName}" 2>/dev/null`);
+        killedWindows.add(windowName);
+      }
+    }
+    return { name: 'stuck-panes', status: 'fixed', message: `Killed ${killedWindows.size} window(s) with ${stuck.length} stuck pane(s)` };
+  }
+
+  const details = stuck.map(s => `${s.paneId}: ${s.issue}`).join('; ');
+  return {
+    name: 'stuck-panes',
+    status: 'error',
+    message: `${stuck.length} stuck pane(s): ${details}`
   };
 }
 
