@@ -1,4 +1,4 @@
-{{TEAM_SIZING_INSTRUCTIONS}}
+{{TASK_ASSESSMENT}}
 
 ## Issue Details
 - **Repository**: {{REPO}}
@@ -14,29 +14,13 @@
 ## Project Context
 {{PROJECT_CONTEXT}}
 
-## Instructions
+## Workflow
 
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are focused expert personas (~1-2KB each) with specific domain expertise.
+If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. If working solo, skip team creation steps.
 
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Implements the code changes. This is the only teammate that writes code.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews all changes for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
-
-   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns. If no UI changes, focuses on API ergonomics and developer experience.
-
-   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates that the implementation matches the issue requirements and acceptance criteria. Ensures nothing is over-engineered or under-scoped. Reviews the final PR description for clarity.
-
-   {{COMPLIANCE_RULES}}
-
-   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
-
-## Phases
-
-2. **Phase 1 — Planning** (all teammates participate):
-   - Builder: Read relevant source files to understand existing patterns. Propose implementation plan.
-   - Product manager: Confirm the scope is right — not too broad, not too narrow. Flag any ambiguity.
-   - All share input with the lead before building starts.
+1. **Phase 1 — Planning** (if team: all participate; if solo: plan yourself):
+   - Read relevant source files to understand existing patterns. Propose implementation plan.
+   - If team: Product manager confirms scope — not too broad, not too narrow. All share input before building starts.
 
    **Interface Contract Check:** If the issue body contains an `## Interface Contract` section, the builder MUST implement exactly that interface — same method names, parameter types, return types, and delegate/callback signatures. Do NOT deviate from the contract. Other agents are implementing against the same contract in parallel.
 
@@ -44,12 +28,12 @@
 
    **Single Ownership Rule:** Only ONE agent should modify any given function. If this issue touches a function that another parallel issue also touches, coordinate via the interface contract. Do NOT add duplicate calls or redundant wiring — check what the contract specifies as your responsibility.
 
-3. **Implementation** (builder works, others standby):
-   - Builder implements changes following existing code conventions
-   - Builder runs any available tests/linters
-   - Builder commits with conventional commit messages (feat:/fix:/refactor:)
+2. **Implementation** (builder works, others standby; if solo: implement yourself):
+   - Implement changes following existing code conventions
+   - Run any available tests/linters
+   - Commit with conventional commit messages (feat:/fix:/refactor:)
 
-4. **Tests** (builder, after implementation):
+3. **Tests** (builder, after implementation; if solo: write tests yourself):
    - Write unit tests for all new/changed functions and classes
    - Write integration tests if the change involves: API endpoints, database operations, or cross-service calls
    - If the repo has no test infrastructure yet:
@@ -66,16 +50,16 @@
      gh issue create --repo {{REPO}} --title "Write tests for [area]" --body "..." --label "agent-write-tests"
      ```
 
-5. **Review** (all reviewers activate):
-   - Security reviewer: Check for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities
-   - UX reviewer: Check for UI friction, accessibility, consistency with existing UX patterns
-   - Product manager: Verify the implementation meets all acceptance criteria from the issue
+4. **Review** (skip if working solo):
+   - If you spawned a security reviewer: Check for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
+   - If you spawned a UX reviewer: Check for UI friction, accessibility, consistency with existing UX patterns.
+   - If you spawned a product manager: Verify the implementation meets all acceptance criteria from the issue.
    - All reviewers: Verify tests exist for new/changed code. Flag missing tests as [BLOCKING].
-   - All send feedback to builder via messages
+   - All send feedback to builder via messages.
 
-6. **Iterate & Ship**:
-   - Builder addresses all feedback
-   - After all reviewers approve, push and create PR:
+5. **Iterate & Ship**:
+   - If team: Builder addresses all feedback. After all reviewers approve, push and create PR.
+   - If solo: Self-review for security issues (hardcoded secrets, injection risks, missing auth checks), then push and create PR.
    ```
    git push origin HEAD
    gh pr create --title "feat: [description]" --body "..." --label "zapat-review"
@@ -88,7 +72,7 @@
    gh pr create --title "feat: [description]" --body "..." --label "zapat-review" --base feature/SLUG
    ```
 
-7. **Shut down the team** when done.
+6. **Shut down the team** when done (skip if working solo).
 
 ### Safety Notes
 - NEVER modify files outside the working directory

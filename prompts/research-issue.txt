@@ -21,11 +21,9 @@ You are the engineering lead. You MUST create an Agent Team to research and anal
    - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Feature prioritization, roadmap alignment, cross-team trade-offs. Analyzes which recommendations are most impactful and how they fit the product strategy.
 
    **Include based on issue content:**
-   - **engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+   - **engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type).
      Include when the issue requires technical feasibility assessment or architecture review.
    - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Security implications. Include when the issue touches auth or data flows.
-
-   {{COMPLIANCE_RULES}}
 
    **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
 
@@ -101,7 +99,7 @@ For each actionable recommendation, specify:
    Response: { "field": "type" }
    Auth: Bearer token
    ```
-   NEVER let agents infer the backend contract from other code. Consult {{REPO_MAP}} for backend repo path.
+   NEVER let agents infer the backend contract from other code.
 
    **Dependency Ordering:** Specify `**Blocked By:** #X, #Y` in dependent sub-issues. Typical order:
    1. Foundation services (no dependencies) — run in parallel

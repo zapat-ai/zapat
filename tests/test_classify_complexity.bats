@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Tests for classify_complexity() and generate_team_instructions() in lib/common.sh
+# Tests for classify_complexity() and generate_task_assessment() in lib/common.sh
 
 load '../node_modules/bats-support/load'
 load '../node_modules/bats-assert/load'
@@ -239,75 +239,93 @@ teardown() {
     assert_output "solo"
 }
 
-# --- generate_team_instructions ---
+# --- generate_task_assessment ---
 
-@test "generate_team_instructions: solo implement — no team creation" {
-    run generate_team_instructions "solo" "implement"
+@test "generate_task_assessment: solo implement — recommends solo" {
+    run generate_task_assessment "solo" "implement"
     assert_success
-    assert_output --partial "Do NOT create a team"
-    assert_output --partial "solo-complexity"
+    assert_output --partial "Classification: Solo"
+    assert_output --partial "Work solo"
 }
 
-@test "generate_team_instructions: duo implement — small team" {
-    run generate_team_instructions "duo" "implement"
+@test "generate_task_assessment: duo implement — recommends small team" {
+    run generate_task_assessment "duo" "implement"
     assert_success
-    assert_output --partial "SMALL team"
-    assert_output --partial "duo-complexity"
-    assert_output --partial "Do NOT spawn ux-reviewer or product-manager"
+    assert_output --partial "Classification: Duo"
+    assert_output --partial "Small team (2 agents)"
+    assert_output --partial "{{BUILDER_AGENT}}"
+    assert_output --partial "{{SECURITY_AGENT}}"
 }
 
-@test "generate_team_instructions: full implement — full team" {
-    run generate_team_instructions "full" "implement"
+@test "generate_task_assessment: full implement — recommends full team" {
+    run generate_task_assessment "full" "implement"
     assert_success
-    assert_output --partial "full-complexity"
-    assert_output --partial "ux-reviewer"
-    assert_output --partial "product-manager"
+    assert_output --partial "Classification: Full"
+    assert_output --partial "Full team (4 agents)"
+    assert_output --partial "{{UX_AGENT}}"
+    assert_output --partial "{{PRODUCT_AGENT}}"
 }
 
-@test "generate_team_instructions: solo review — no team" {
-    run generate_team_instructions "solo" "review"
+@test "generate_task_assessment: solo review — recommends solo review" {
+    run generate_task_assessment "solo" "review"
     assert_success
-    assert_output --partial "Do NOT create a team"
-    assert_output --partial "solo-complexity"
+    assert_output --partial "Classification: Solo"
+    assert_output --partial "Review solo"
 }
 
-@test "generate_team_instructions: duo review — small team" {
-    run generate_team_instructions "duo" "review"
+@test "generate_task_assessment: duo review — recommends small review team" {
+    run generate_task_assessment "duo" "review"
     assert_success
-    assert_output --partial "SMALL review team"
-    assert_output --partial "duo-complexity"
+    assert_output --partial "Classification: Duo"
+    assert_output --partial "Small review team (2 agents)"
 }
 
-@test "generate_team_instructions: full review — full team" {
-    run generate_team_instructions "full" "review"
+@test "generate_task_assessment: full review — recommends full review team" {
+    run generate_task_assessment "full" "review"
     assert_success
-    assert_output --partial "full-complexity"
-    assert_output --partial "ux-reviewer"
+    assert_output --partial "Classification: Full"
+    assert_output --partial "Full review team (3 agents)"
 }
 
-@test "generate_team_instructions: solo rework — no team" {
-    run generate_team_instructions "solo" "rework"
+@test "generate_task_assessment: rework — recommends feedback-based sizing" {
+    run generate_task_assessment "full" "rework"
     assert_success
-    assert_output --partial "Do NOT create a team"
-    assert_output --partial "solo-complexity"
+    assert_output --partial "Feedback-based sizing"
+    assert_output --partial "Announce your classification"
 }
 
-@test "generate_team_instructions: duo rework — small team" {
-    run generate_team_instructions "duo" "rework"
+@test "generate_task_assessment: unknown complexity defaults to full" {
+    run generate_task_assessment "unknown" "implement"
     assert_success
-    assert_output --partial "SMALL team"
-    assert_output --partial "duo-complexity"
+    assert_output --partial "Classification: Full"
 }
 
-@test "generate_team_instructions: full rework — full team" {
-    run generate_team_instructions "full" "rework"
+@test "generate_task_assessment: includes Leadership Principles" {
+    run generate_task_assessment "solo" "implement"
     assert_success
-    assert_output --partial "full-complexity"
-    assert_output --partial "product-manager"
+    assert_output --partial "Leadership Principles"
+    assert_output --partial "Customer obsession"
+    assert_output --partial "Frugality"
 }
 
-@test "generate_team_instructions: unknown complexity defaults to full" {
-    run generate_team_instructions "unknown" "implement"
+@test "generate_task_assessment: includes Model Budget Guide" {
+    run generate_task_assessment "duo" "review"
     assert_success
-    assert_output --partial "full-complexity"
+    assert_output --partial "Model Budget Guide"
+    assert_output --partial "{{SUBAGENT_MODEL}}"
+}
+
+@test "generate_task_assessment: includes Available Roles" {
+    run generate_task_assessment "full" "implement"
+    assert_success
+    assert_output --partial "Available Roles"
+    assert_output --partial "{{BUILDER_AGENT}}"
+    assert_output --partial "{{SECURITY_AGENT}}"
+}
+
+@test "generate_task_assessment: includes Lead's Authority section" {
+    run generate_task_assessment "solo" "implement"
+    assert_success
+    assert_output --partial "Your Authority as Lead"
+    assert_output --partial "advisory, not mandatory"
 }

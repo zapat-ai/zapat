@@ -19,14 +19,12 @@ You are the engineering lead. You MUST create an Agent Team to triage this issue
 
 1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are focused expert personas (~1-2KB each) with specific domain expertise.
 
-   - **engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+   - **engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type).
      Explores the codebase to assess technical complexity, identify affected files, and propose an implementation approach.
 
    - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Assesses business priority, user impact, and how this fits into the product roadmap. Considers whether this is the right thing to build now.
 
    - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Evaluates any security implications — does this touch auth, storage, or data flows?
-
-   {{COMPLIANCE_RULES}}
 
    **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
 

@@ -1,4 +1,4 @@
-{{TEAM_SIZING_INSTRUCTIONS}}
+{{TASK_ASSESSMENT}}
 
 ## PR Details
 - **Repository**: {{REPO}}
@@ -19,53 +19,29 @@
 {{PROJECT_CONTEXT}}
 
 ## Workflow
-## Instructions
 
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are focused expert personas (~1-2KB each) with specific domain expertise.
+If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. If working solo, skip team creation steps.
 
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Addresses ALL review feedback by making code changes. This is the only teammate that writes code.
+1. **Analyze Feedback**:
+   Read all review feedback carefully. Classify each piece using the Feedback Triage Guide below. Announce your classification and team decision before proceeding.
 
-   **Team sizing — read the review feedback below and decide:**
-   - If ALL feedback is only style/formatting nits (naming, whitespace, comment wording): builder works solo — no team needed.
-   - If ANY feedback mentions security concerns, vulnerabilities, or auth issues: include **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`).
-   - If ANY feedback questions requirements, scope, or acceptance criteria: include **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`).
-   - Default: builder works solo to address the rework.
-
-   Classify the feedback BEFORE spawning teammates. Announce your classification: "Feedback classification: [style-only|security-concern|scope-question|mixed]. Team: [solo|+security|+product|+security+product]."
-
-   **Team sizing based on feedback type:**
-   Before spawning the full team, analyze the review feedback:
-   - If feedback is ONLY style/formatting nits (naming, whitespace, comments): work solo — no team needed, just the builder
-   - If feedback mentions security concerns (vulnerabilities, auth, injection, secrets): include security-reviewer
-   - If feedback questions requirements, scope, or acceptance criteria: include product-manager
-   - Default: builder solo handles the rework
-
-   This prevents spawning a full 3-agent team for trivial one-line fixes.
-
-   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
-
-2. **Team workflow**:
-
-   **Phase 1 — Blocking Issues (must fix):**
-   - Builder: Read all review feedback carefully. Identify blocking issues — things marked as "blocking", "must fix", "required", or that point out bugs, security issues, or correctness problems.
-   - Address ALL blocking issues first.
+2. **Phase 1 — Blocking Issues (must fix):**
+   - Address ALL blocking issues first — things marked as "blocking", "must fix", "required", or that point out bugs, security issues, or correctness problems.
    - Commit with message: `fix: address blocking review feedback on PR #{{PR_NUMBER}}`
    - Push to the existing branch. Do NOT force-push or rebase — add commits on top.
 
-   **Phase 2 — Suggestions & Improvements (should fix):**
-   - Builder: Now address ALL remaining feedback — suggestions, improvements, refactoring ideas, naming changes, documentation additions, test suggestions, and "nice to have" items.
+3. **Phase 2 — Suggestions & Improvements (should fix):**
+   - Address ALL remaining feedback — suggestions, improvements, refactoring ideas, naming changes, documentation additions, test suggestions, and "nice to have" items.
    - Treat suggestions as actionable work, not optional. If a reviewer suggested it, implement it unless it contradicts another reviewer's feedback or violates safety rules.
    - Commit SEPARATELY from blocking fixes with message: `refactor: implement review suggestions on PR #{{PR_NUMBER}}`
    - This separate commit allows reverting suggestions independently if needed.
 
-   **Phase 3 — Review** (skip if working solo):
-   If you spawned additional reviewers, proceed below. If the builder is working alone, skip to shutting down the team.
-   - Security reviewer: After builder pushes both commits, verify all security-related feedback was correctly addressed. Check that new commits didn't introduce new issues.
-   - Product manager: After builder pushes, verify the original acceptance criteria are still met and no regressions were introduced. Confirm both blocking issues AND suggestions were addressed.
+4. **Phase 3 — Review** (skip if working solo):
+   - If you spawned a security reviewer: After builder pushes both commits, verify all security-related feedback was correctly addressed. Check that new commits didn't introduce new issues.
+   - If you spawned a product manager: After builder pushes, verify the original acceptance criteria are still met and no regressions were introduced. Confirm both blocking issues AND suggestions were addressed.
    - All send their assessment to you (the lead).
 
-3. **After all reviewers confirm**, shut down the team.
+5. **Shut down the team** when done (skip if working solo).
 
 ## Feedback Triage Guide
 

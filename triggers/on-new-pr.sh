@@ -114,7 +114,7 @@ fi
 log_info "Complexity classification: $COMPLEXITY for PR #${PR_NUMBER}"
 _log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"review\",\"pr\":$PR_NUMBER,\"repo\":\"$REPO\""
 
-TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "review")
+TASK_ASSESSMENT=$(generate_task_assessment "$COMPLEXITY" "review")
 # --- Copy slim CLAUDE.md into worktree ---
 cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$EFFECTIVE_PATH/CLAUDE.md"
 
@@ -137,7 +137,7 @@ FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/pr-review.txt" \
     "PR_FILES=$PR_FILES" \
     "PR_DIFF=$PR_DIFF" \
     "COMPLEXITY=$COMPLEXITY" \
-    "TEAM_SIZING_INSTRUCTIONS=$TEAM_INSTRUCTIONS" \
+    "TASK_ASSESSMENT=$TASK_ASSESSMENT" \
     "MENTION_CONTEXT=$MENTION_BLOCK")
 
 # Write prompt to temp file (avoids tmux send-keys escaping issues)

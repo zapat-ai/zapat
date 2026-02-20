@@ -141,7 +141,7 @@ fi
 log_info "Complexity classification: $COMPLEXITY for issue #${ISSUE_NUMBER}"
 _log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"implement\",\"issue\":$ISSUE_NUMBER,\"repo\":\"$REPO\""
 
-TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "implement")
+TASK_ASSESSMENT=$(generate_task_assessment "$COMPLEXITY" "implement")
 # --- Copy slim CLAUDE.md into worktree ---
 cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$WORKTREE_DIR/CLAUDE.md"
 
@@ -163,7 +163,7 @@ FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/implement-issue.txt" \
     "ISSUE_BODY=$ISSUE_BODY" \
     "ISSUE_LABELS=$ISSUE_LABELS" \
     "COMPLEXITY=$COMPLEXITY" \
-    "TEAM_SIZING_INSTRUCTIONS=$TEAM_INSTRUCTIONS" \
+    "TASK_ASSESSMENT=$TASK_ASSESSMENT" \
     "MENTION_CONTEXT=$MENTION_BLOCK")
 
 # Write prompt to temp file (avoids tmux send-keys escaping issues)

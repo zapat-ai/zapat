@@ -14,11 +14,6 @@ setup() {
     mkdir -p "$BATS_TEST_TMPDIR/prompts"
 
     # Create minimal repos.conf so read_repos doesn't fail
-    echo "" > "$AUTOMATION_DIR/config/repos.conf"
-
-    source "$BATS_TEST_DIRNAME/../lib/common.sh"
-
-    # Create minimal repos.conf so read_repos doesn't fail
     touch "$AUTOMATION_DIR/config/repos.conf"
 
     source "$BATS_TEST_DIRNAME/../lib/common.sh"
@@ -163,4 +158,19 @@ README.md"
     assert_output --partial "src/app.tsx"
     assert_output --partial "src/index.ts"
     assert_output --partial "README.md"
+}
+
+# --- TASK_ASSESSMENT two-pass resolution test ---
+
+@test "substitute_prompt resolves placeholders inside TASK_ASSESSMENT (two-pass)" {
+    # Template uses TASK_ASSESSMENT which itself contains {{BUILDER_AGENT}}
+    echo '{{TASK_ASSESSMENT}} and builder is {{BUILDER_AGENT}}' > "$BATS_TEST_TMPDIR/prompts/two-pass.txt"
+
+    local assessment="Agent: {{BUILDER_AGENT}} Model: {{SUBAGENT_MODEL}}"
+    run substitute_prompt "$BATS_TEST_TMPDIR/prompts/two-pass.txt" "TASK_ASSESSMENT=$assessment"
+    assert_success
+    # PASS 1 expands TASK_ASSESSMENT, PASS 2 resolves BUILDER_AGENT and SUBAGENT_MODEL inside it
+    assert_output --partial "Agent: engineer"
+    assert_output --partial "Model: sonnet"
+    assert_output --partial "and builder is engineer"
 }

@@ -189,20 +189,20 @@ _derive_subagent_model() {
 
 # ─── Prompt templates use {{SUBAGENT_MODEL}} placeholder ─────────────────────
 
-@test "implement-issue.txt uses SUBAGENT_MODEL placeholder" {
-    grep -q '{{SUBAGENT_MODEL}}' "$BATS_TEST_DIRNAME/../prompts/implement-issue.txt"
+@test "implement-issue.txt uses TASK_ASSESSMENT placeholder (SUBAGENT_MODEL comes via assessment)" {
+    grep -q '{{TASK_ASSESSMENT}}' "$BATS_TEST_DIRNAME/../prompts/implement-issue.txt"
 }
 
 @test "issue-triage.txt uses SUBAGENT_MODEL placeholder" {
     grep -q '{{SUBAGENT_MODEL}}' "$BATS_TEST_DIRNAME/../prompts/issue-triage.txt"
 }
 
-@test "pr-review.txt uses SUBAGENT_MODEL placeholder" {
-    grep -q '{{SUBAGENT_MODEL}}' "$BATS_TEST_DIRNAME/../prompts/pr-review.txt"
+@test "pr-review.txt uses TASK_ASSESSMENT placeholder (SUBAGENT_MODEL comes via assessment)" {
+    grep -q '{{TASK_ASSESSMENT}}' "$BATS_TEST_DIRNAME/../prompts/pr-review.txt"
 }
 
-@test "rework-pr.txt uses SUBAGENT_MODEL placeholder" {
-    grep -q '{{SUBAGENT_MODEL}}' "$BATS_TEST_DIRNAME/../prompts/rework-pr.txt"
+@test "rework-pr.txt uses TASK_ASSESSMENT placeholder (SUBAGENT_MODEL comes via assessment)" {
+    grep -q '{{TASK_ASSESSMENT}}' "$BATS_TEST_DIRNAME/../prompts/rework-pr.txt"
 }
 
 @test "research-issue.txt uses SUBAGENT_MODEL placeholder" {

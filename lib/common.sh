@@ -639,30 +639,12 @@ substitute_prompt() {
     content=$(cat "$template")
 
     # Append shared footer if it exists in the same directory
-    local footer_file="$(dirname "$template")/_shared-footer.txt"
+    local footer_file
+    footer_file="$(dirname "$template")/_shared-footer.txt"
     if [[ -f "$footer_file" ]]; then
         content="${content}
 $(cat "$footer_file")"
     fi
-
-    # Auto-inject standard variables
-    read_agents_conf "" 2>/dev/null || true
-    local repo_map
-    repo_map=$(_generate_repo_map)
-    local compliance_rules
-    compliance_rules=$(_generate_compliance_rules)
-    local project_context
-    project_context=$(load_project_context "")
-
-    content="${content//\{\{REPO_MAP\}\}/${repo_map}}"
-    content="${content//\{\{BUILDER_AGENT\}\}/${BUILDER_AGENT:-engineer}}"
-    content="${content//\{\{SECURITY_AGENT\}\}/${SECURITY_AGENT:-security-reviewer}}"
-    content="${content//\{\{PRODUCT_AGENT\}\}/${PRODUCT_AGENT:-product-manager}}"
-    content="${content//\{\{UX_AGENT\}\}/${UX_AGENT:-ux-reviewer}}"
-    content="${content//\{\{ORG_NAME\}\}/${GITHUB_ORG:-}}"
-    content="${content//\{\{COMPLIANCE_RULES\}\}/${compliance_rules}}"
-    content="${content//\{\{PROJECT_CONTEXT\}\}/${project_context}}"
-    content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
 
     # Derive Task tool model shorthand from CLAUDE_SUBAGENT_MODEL env var
     local _subagent_model="sonnet"
@@ -671,11 +653,10 @@ $(cat "$footer_file")"
         *haiku*) _subagent_model="haiku" ;;
         *sonnet*) _subagent_model="sonnet" ;;
     esac
-    content="${content//\{\{SUBAGENT_MODEL\}\}/${_subagent_model}}"
 
-    # Apply explicit overrides
     # Cap PR_DIFF at configurable limit (~40,000 characters ≈ ~10,000 tokens)
     local max_diff_chars="${MAX_DIFF_CHARS:-40000}"
+    [[ "$max_diff_chars" =~ ^[0-9]+$ ]] || max_diff_chars=40000
     local pr_number_val="" repo_val=""
     local -a capped_args=()
     for pair in "$@"; do
@@ -701,12 +682,36 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
         capped_args+=("${key}=${value}")
     done
 
-    # Apply explicit overrides
-    for pair in "${capped_args[@]}"; do
-        local key="${pair%%=*}"
-        local value="${pair#*=}"
-        content="${content//\{\{${key}\}\}/${value}}"
-    done
+    # PASS 1: Apply explicit KEY=VALUE overrides first
+    # This ensures TASK_ASSESSMENT (which contains {{PLACEHOLDER}} tokens) is expanded
+    # before auto-injection resolves those inner tokens.
+    if [[ ${#capped_args[@]} -gt 0 ]]; then
+        for pair in "${capped_args[@]}"; do
+            local key="${pair%%=*}"
+            local value="${pair#*=}"
+            content="${content//\{\{${key}\}\}/${value}}"
+        done
+    fi
+
+    # PASS 2: Auto-inject standard variables (resolves all remaining {{PLACEHOLDER}} tokens)
+    read_agents_conf "" 2>/dev/null || true
+    local repo_map
+    repo_map=$(_generate_repo_map)
+    local compliance_rules
+    compliance_rules=$(_generate_compliance_rules)
+    local project_context
+    project_context=$(load_project_context "")
+
+    content="${content//\{\{REPO_MAP\}\}/${repo_map}}"
+    content="${content//\{\{BUILDER_AGENT\}\}/${BUILDER_AGENT:-engineer}}"
+    content="${content//\{\{SECURITY_AGENT\}\}/${SECURITY_AGENT:-security-reviewer}}"
+    content="${content//\{\{PRODUCT_AGENT\}\}/${PRODUCT_AGENT:-product-manager}}"
+    content="${content//\{\{UX_AGENT\}\}/${UX_AGENT:-ux-reviewer}}"
+    content="${content//\{\{ORG_NAME\}\}/${GITHUB_ORG:-}}"
+    content="${content//\{\{COMPLIANCE_RULES\}\}/${compliance_rules}}"
+    content="${content//\{\{PROJECT_CONTEXT\}\}/${project_context}}"
+    content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
+    content="${content//\{\{SUBAGENT_MODEL\}\}/${_subagent_model}}"
 
     echo "$content"
 }
@@ -786,220 +791,154 @@ classify_complexity() {
     return 0
 }
 
-# Generate team sizing instructions based on complexity level and job type.
-# Usage: generate_team_instructions COMPLEXITY JOB_TYPE
+# Generate a task assessment with recommendations for team composition and model assignment.
+# The lead agent has full authority to adjust team size and per-agent models.
+# Usage: generate_task_assessment COMPLEXITY JOB_TYPE
 #   COMPLEXITY: "solo" | "duo" | "full"
 #   JOB_TYPE: "implement" | "review" | "rework"
 #
 # NOTE: The output contains {{PLACEHOLDER}} tokens (e.g. {{BUILDER_AGENT}},
-# {{PR_NUMBER}}). These are intentional — they will be resolved downstream
-# by substitute_prompt() when the full prompt is assembled.
-generate_team_instructions() {
+# {{SUBAGENT_MODEL}}). These are intentional — they will be resolved downstream
+# by substitute_prompt() PASS 2 when the full prompt is assembled.
+generate_task_assessment() {
     local complexity="${1:-full}"
     local job_type="${2:-implement}"
 
+    # --- Section A: Leadership Principles ---
+    cat <<'PRINCIPLES'
+## Decision Framework — Leadership Principles
+
+You are the engineering lead. Use these principles to guide every decision about team composition, model assignment, and quality trade-offs:
+
+1. **Customer obsession** — The end user's experience comes first. Code quality, reliability, and correctness are non-negotiable.
+2. **Deliver results** — Ship working code that meets acceptance criteria. Don't over-optimize process at the cost of delivery.
+3. **Earn trust** — Produce code that's safe, secure, and well-tested. When unsure, escalate to a human rather than guessing.
+4. **Insist on high standards** — Never cut corners on security, testing, or code quality, even for solo tasks. Solo means fewer reviewers, not lower standards.
+5. **Deep dive** — Understand the problem before writing code. Read surrounding code, check for existing patterns, verify assumptions.
+6. **Invent and simplify** — Prefer the simplest correct solution. Don't over-engineer.
+7. **Bias for action** — Make team/model decisions quickly based on available signals. Don't wait for perfect information.
+8. **Frugality** — Use resources wisely. Don't spawn agents or use expensive models when they won't improve the outcome. Every token spent should earn its keep.
+
+PRINCIPLES
+
+    # --- Section B: Complexity Assessment ---
+    printf '## Complexity Assessment\n\n'
     case "$complexity" in
-        solo)
-            case "$job_type" in
-                implement)
-                    cat <<'SOLO_IMPL'
-You are the engineering lead. This is a **solo-complexity** task — small, contained changes.
+        solo) printf '**Classification: Solo** — Small, contained changes (≤2 files, ≤100 LOC, no security-sensitive paths).\n\n' ;;
+        duo)  printf '**Classification: Duo** — Moderate scope (≤5 files, ≤300 LOC) or unknown scope requiring at least a security check.\n\n' ;;
+        full) printf '**Classification: Full** — Large scope, security-sensitive, cross-service, or 3+ top-level directories.\n\n' ;;
+        *)    printf '**Classification: Full** (unknown complexity "%s" defaulted to full).\n\n' "$complexity" ;;
+    esac
 
-**Do NOT create a team.** Work alone. Implement the changes yourself directly.
-**Skip Phases 3-4 (Review/Iterate) below** — after implementation and tests, proceed directly to pushing and creating the PR.
+    # --- Section C: Recommended Team ---
+    printf '## Recommended Team\n\n'
+    case "$job_type" in
+        implement)
+            case "$complexity" in
+                solo) cat <<'REC_SOLO_IMPL'
+**Recommendation: Work solo.** No team needed for this scope.
+- Lead implements, writes tests, self-reviews for security, commits, and creates PR.
+- Skip team creation, review phases, and team shutdown steps in the workflow below.
 
-## Instructions
-
-1. **Read** relevant source files to understand existing patterns.
-2. **Implement** changes following existing code conventions.
-3. **Write tests** for all new/changed functions.
-4. **Run** any available tests/linters — iterate until they pass.
-5. **Self-review** for security issues (hardcoded secrets, injection risks, missing auth checks).
-6. **Commit** with conventional commit messages (feat:/fix:/refactor:).
-7. **Push and create PR**:
-   ```
-   git push origin HEAD
-   gh pr create --title "feat: [description]" --body "..." --label "zapat-review"
-   ```
-SOLO_IMPL
+REC_SOLO_IMPL
                     ;;
-                review)
-                    cat <<'SOLO_REVIEW'
-You are the engineering lead. This is a **solo-complexity** PR — small, contained changes.
+                duo) cat <<'REC_DUO_IMPL'
+**Recommendation: Small team (2 agents).**
+- **builder** (`subagent_type: {{BUILDER_AGENT}}`): Implements code changes. Only teammate that writes code.
+- **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
 
-**Do NOT create a team.** Review this PR yourself directly.
-
-## Instructions
-
-1. **Read** the diff and surrounding source files for context.
-2. **Check** for: correctness, security issues (secrets, injection, auth), error handling, test coverage.
-3. **Post** your review as a PR comment using the standard review format.
-SOLO_REVIEW
+REC_DUO_IMPL
                     ;;
-                rework)
-                    cat <<'SOLO_REWORK'
-You are the engineering lead. This is a **solo-complexity** rework — small, focused feedback.
+                full|*) cat <<'REC_FULL_IMPL'
+**Recommendation: Full team (4 agents).**
+- **builder** (`subagent_type: {{BUILDER_AGENT}}`): Implements code changes. Only teammate that writes code.
+- **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
+- **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX for usability, accessibility, friction. If no UI changes, focuses on API ergonomics.
+- **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates implementation meets requirements. Ensures nothing is over-engineered or under-scoped.
 
-**Do NOT create a team.** Address the review feedback yourself directly.
-
-## Instructions
-
-1. **Read** all review feedback carefully.
-2. **Address** blocking issues first, then suggestions.
-3. **Commit** blocking fixes: `fix: address blocking review feedback on PR #{{PR_NUMBER}}`
-4. **Commit** suggestions separately: `refactor: implement review suggestions on PR #{{PR_NUMBER}}`
-5. **Push** to the existing branch. Do NOT force-push or rebase.
-SOLO_REWORK
+REC_FULL_IMPL
                     ;;
             esac
             ;;
-        duo)
-            case "$job_type" in
-                implement)
-                    cat <<'DUO_IMPL'
-You are the engineering lead. This is a **duo-complexity** task — moderate scope.
+        review)
+            case "$complexity" in
+                solo) cat <<'REC_SOLO_REVIEW'
+**Recommendation: Review solo.** No team needed for this scope.
+- Lead reads the diff, checks correctness/security/tests, posts review.
+- Skip team creation, reviewer steps, and team shutdown in the workflow below.
 
-**Create a SMALL team** with only the builder and one reviewer. Do NOT spawn the full team.
-**Skip Phases 3-4 (Review/Iterate) below** — after the security reviewer approves, proceed directly to pushing and creating the PR.
-
-## Team (2 agents only)
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn:
-
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Implements the code changes. This is the only teammate that writes code.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews all changes for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
-
-   Do NOT spawn ux-reviewer or product-manager for duo-complexity tasks.
-
-## Instructions
-
-1. **Phase 1 — Planning**: Builder reads source files, proposes implementation plan. Lead approves.
-2. **Phase 2 — Implementation**: Builder implements changes, writes tests, runs linters.
-3. **Phase 3 — Review**: Security reviewer checks for vulnerabilities. Lead validates requirements.
-4. **Phase 4 — Ship**: After reviewer approves, push and create PR.
-DUO_IMPL
+REC_SOLO_REVIEW
                     ;;
-                review)
-                    cat <<'DUO_REVIEW'
-You are the engineering lead. This is a **duo-complexity** PR — moderate scope.
+                duo) cat <<'REC_DUO_REVIEW'
+**Recommendation: Small review team (2 agents).**
+- **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness.
+- **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
 
-**Create a SMALL review team** with only one expert reviewer. Do NOT spawn the full team.
-
-## Team (2 agents only)
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn:
-
-   - **platform-engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Reviews code quality, architecture, patterns, performance, and correctness.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
-
-   Do NOT spawn ux-reviewer for duo-complexity reviews.
-
-## Instructions
-
-1. Both reviewers analyze the diff and surrounding code for context.
-2. Lead synthesizes findings into the standard review format.
-3. Post the review as a PR comment.
-DUO_REVIEW
+REC_DUO_REVIEW
                     ;;
-                rework)
-                    cat <<'DUO_REWORK'
-You are the engineering lead. This is a **duo-complexity** rework — moderate feedback scope.
+                full|*) cat <<'REC_FULL_REVIEW'
+**Recommendation: Full review team (3 agents).**
+- **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness.
+- **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
+- **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, consistency.
 
-**Create a SMALL team** with only the builder. Do NOT spawn the full team.
-
-## Team (2 agents only)
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn:
-
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Addresses ALL review feedback by making code changes.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Re-reviews changes for security vulnerabilities.
-
-   Do NOT spawn product-manager for duo-complexity rework.
-
-## Instructions
-
-1. **Phase 1 — Blocking Issues**: Builder addresses all blocking feedback, commits fixes.
-2. **Phase 2 — Suggestions**: Builder implements remaining suggestions, commits separately.
-3. **Phase 3 — Review**: Security reviewer validates fixes. Lead confirms requirements still met.
-DUO_REWORK
+REC_FULL_REVIEW
                     ;;
             esac
             ;;
-        full|*)
-            case "$job_type" in
-                implement)
-                    cat <<'FULL_IMPL'
-You are the engineering lead. This is a **full-complexity** task — large scope, security-sensitive, or cross-service.
+        rework)
+            cat <<'REC_REWORK'
+**Recommendation: Feedback-based sizing.**
+Read the review feedback first, then decide:
+- **Style/formatting nits only** → Work solo. No team needed.
+- **Security concerns mentioned** → Spawn **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`).
+- **Scope/requirements questioned** → Spawn **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`).
+- **Mixed feedback** → Spawn both.
+- Default: **builder** (`subagent_type: {{BUILDER_AGENT}}`) works solo to address rework.
 
-You MUST create an Agent Team to implement this issue. Do NOT attempt to implement alone.
+Announce your classification before spawning: "Feedback classification: [style-only|security-concern|scope-question|mixed]. Team: [solo|+security|+product|+security+product]."
 
-**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT implement the issue yourself. The team provides essential review from security, UX, clinical, and product perspectives.**
-
-## Team
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
-
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Implements the code changes. This is the only teammate that writes code.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews all changes for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
-
-   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns. If no UI changes, focuses on API ergonomics and developer experience.
-
-   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates that the implementation matches the issue requirements and acceptance criteria. Ensures nothing is over-engineered or under-scoped. Reviews the final PR description for clarity.
-
-   {{COMPLIANCE_RULES}}
-FULL_IMPL
-                    ;;
-                review)
-                    cat <<'FULL_REVIEW'
-You are the engineering lead. This is a **full-complexity** PR — large scope, security-sensitive, or cross-service.
-
-You MUST create an Agent Team to review this PR. Do NOT attempt to review alone.
-
-**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT do the review yourself. The whole point is getting multiple expert perspectives.**
-
-## Team
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
-
-   - **platform-engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Reviews code quality, architecture, patterns, performance, and correctness. Reads the surrounding codebase to understand context.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
-
-   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews any UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
-
-   {{COMPLIANCE_RULES}}
-FULL_REVIEW
-                    ;;
-                rework)
-                    cat <<'FULL_REWORK'
-You are the engineering lead. This is a **full-complexity** rework — significant feedback requiring multiple perspectives.
-
-You MUST create an Agent Team to address review feedback on this PR. Do NOT attempt to do this alone.
-
-**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation.**
-
-## Team
-
-1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
-
-   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
-     Addresses ALL review feedback by making code changes. This is the only teammate that writes code.
-
-   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Re-reviews all changes for security vulnerabilities. Validates that security-related feedback was addressed correctly.
-
-   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Verifies that the reworked changes still meet the original requirements. Ensures feedback was addressed without scope creep or regression.
-FULL_REWORK
-                    ;;
-            esac
+REC_REWORK
             ;;
     esac
+
+    # --- Section D: Model Budget Guide ---
+    cat <<'MODEL_GUIDE'
+## Model Budget Guide
+
+| Agent Role | Default Model | When to Upgrade |
+|------------|---------------|-----------------|
+| builder | `model: "{{SUBAGENT_MODEL}}"` | Use opus for complex multi-file refactors |
+| security-reviewer | `model: "{{SUBAGENT_MODEL}}"` | Use opus for auth/crypto/injection-sensitive code |
+| ux-reviewer | `model: "{{SUBAGENT_MODEL}}"` | Rarely needs upgrade |
+| product-manager | `model: "{{SUBAGENT_MODEL}}"` | Rarely needs upgrade |
+
+Spawn each teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call unless you have a specific reason to upgrade. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
+MODEL_GUIDE
+
+    # --- Section E: Available Roles ---
+    cat <<'ROLES'
+## Available Roles
+
+All agent personas available for team composition:
+- `{{BUILDER_AGENT}}` — Engineering/implementation (select based on repo type)
+- `{{SECURITY_AGENT}}` — Security review
+- `{{PRODUCT_AGENT}}` — Product management / requirements validation
+- `{{UX_AGENT}}` — UX/accessibility review
+
+ROLES
+
+    # --- Section F: Lead's Authority ---
+    cat <<'AUTHORITY'
+## Your Authority as Lead
+
+The complexity classification and team recommendation above are **advisory, not mandatory**. You have full authority to:
+- **Adjust team size** — Add or remove agents based on what you see in the code. A "solo" recommendation doesn't prevent you from spawning a security reviewer if you spot auth code.
+- **Change model assignments** — Upgrade to opus for security-critical reviews, downgrade to haiku for simple validation.
+- **Skip agents** — If the UX reviewer has nothing to review (no UI files), don't spawn one.
+- **Add agents** — If the task touches compliance-sensitive areas, add a compliance reviewer even if not recommended.
+
+Ground your decisions in the Leadership Principles above. If you lack sufficient information to make a confident decision, add a comment asking for human guidance rather than guessing.
+AUTHORITY
 }

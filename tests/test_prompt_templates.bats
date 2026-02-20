@@ -142,3 +142,53 @@ EOF
         fi
     done
 }
+
+# --- TASK_ASSESSMENT placeholder tests ---
+
+@test "implement-issue.txt uses TASK_ASSESSMENT placeholder" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    run grep '{{TASK_ASSESSMENT}}' "$real_prompts/implement-issue.txt"
+    assert_success
+}
+
+@test "pr-review.txt uses TASK_ASSESSMENT placeholder" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    run grep '{{TASK_ASSESSMENT}}' "$real_prompts/pr-review.txt"
+    assert_success
+}
+
+@test "rework-pr.txt uses TASK_ASSESSMENT placeholder" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    run grep '{{TASK_ASSESSMENT}}' "$real_prompts/rework-pr.txt"
+    assert_success
+}
+
+@test "no prompt template uses TEAM_SIZING_INSTRUCTIONS placeholder" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    for f in "$real_prompts"/*.txt; do
+        if grep -q 'TEAM_SIZING_INSTRUCTIONS' "$f"; then
+            fail "Found TEAM_SIZING_INSTRUCTIONS in $(basename "$f") — should use TASK_ASSESSMENT"
+        fi
+    done
+}
+
+@test "implement-issue.txt does not have hardcoded agent roster" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    if grep -q 'subagent_type: {{BUILDER_AGENT}}' "$real_prompts/implement-issue.txt"; then
+        fail "Found hardcoded agent roster in implement-issue.txt — agent roster should come from TASK_ASSESSMENT"
+    fi
+}
+
+@test "pr-review.txt does not have hardcoded agent roster" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    if grep -q 'subagent_type: {{BUILDER_AGENT}}' "$real_prompts/pr-review.txt"; then
+        fail "Found hardcoded agent roster in pr-review.txt — agent roster should come from TASK_ASSESSMENT"
+    fi
+}
+
+@test "rework-pr.txt does not have hardcoded agent roster" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    if grep -q 'subagent_type: {{BUILDER_AGENT}}' "$real_prompts/rework-pr.txt"; then
+        fail "Found hardcoded agent roster in rework-pr.txt — agent roster should come from TASK_ASSESSMENT"
+    fi
+}
