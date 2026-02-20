@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for tmux-helpers.sh: batch notifications and dynamic timeouts
 
+load '../node_modules/bats-support/load'
+load '../node_modules/bats-assert/load'
+
 setup() {
     export TEST_DIR="$(mktemp -d)"
     export SCRIPT_DIR="$TEST_DIR"
@@ -57,7 +60,8 @@ teardown() {
         return 0
     }
 
-    _pane_health_should_notify "test-pane" "rate_limit"
+    run _pane_health_should_notify "test-pane" "rate_limit"
+    assert_success
 }
 
 @test "_pane_health_should_notify throttles subsequent notifications" {
@@ -82,10 +86,12 @@ teardown() {
     }
 
     # First call should pass
-    _pane_health_should_notify "test-pane" "rate_limit"
+    run _pane_health_should_notify "test-pane" "rate_limit"
+    assert_success
 
     # Second call within cooldown should be throttled
-    ! _pane_health_should_notify "test-pane" "rate_limit"
+    run _pane_health_should_notify "test-pane" "rate_limit"
+    assert_failure
 }
 
 @test "_pane_health_should_notify uses batch-summary key for batched notifications" {
@@ -110,8 +116,9 @@ teardown() {
     }
 
     # Batch-summary key should work like any other key
-    _pane_health_should_notify "batch-summary" "test-job"
-    [[ -f "$TEST_DIR/state/pane-health-throttle/batch-summary--test-job" ]]
+    run _pane_health_should_notify "batch-summary" "test-job"
+    assert_success
+    assert [ -f "$TEST_DIR/state/pane-health-throttle/batch-summary--test-job" ]
 }
 
 # --- Dynamic timeout tests ---
@@ -123,20 +130,20 @@ teardown() {
     local perm_timeout=$(( ${TMUX_PERMISSIONS_TIMEOUT:-30} * 1 ))
     local ready_timeout=$(( ${TMUX_READINESS_TIMEOUT:-30} * 1 ))
 
-    [[ $perm_timeout -eq 30 ]]
-    [[ $ready_timeout -eq 30 ]]
+    assert [ "$perm_timeout" -eq 30 ]
+    assert [ "$ready_timeout" -eq 30 ]
 }
 
 @test "timeout respects TMUX_PERMISSIONS_TIMEOUT override" {
     export TMUX_PERMISSIONS_TIMEOUT=60
     local perm_timeout=$(( ${TMUX_PERMISSIONS_TIMEOUT:-30} * 1 ))
-    [[ $perm_timeout -eq 60 ]]
+    assert [ "$perm_timeout" -eq 60 ]
 }
 
 @test "timeout respects TMUX_READINESS_TIMEOUT override" {
     export TMUX_READINESS_TIMEOUT=45
     local ready_timeout=$(( ${TMUX_READINESS_TIMEOUT:-30} * 1 ))
-    [[ $ready_timeout -eq 45 ]]
+    assert [ "$ready_timeout" -eq 45 ]
 }
 
 @test "timeout scales with active windows > 5" {
@@ -148,8 +155,8 @@ teardown() {
     local perm_timeout=$(( 30 * scale_factor ))
 
     # 15 windows -> scale_factor = 1 + 15/10 = 2
-    [[ $scale_factor -eq 2 ]]
-    [[ $perm_timeout -eq 60 ]]
+    assert [ "$scale_factor" -eq 2 ]
+    assert [ "$perm_timeout" -eq 60 ]
 }
 
 @test "timeout does not scale with 5 or fewer windows" {
@@ -159,7 +166,7 @@ teardown() {
         scale_factor=$(( 1 + active_windows / 10 ))
     fi
 
-    [[ $scale_factor -eq 1 ]]
+    assert [ "$scale_factor" -eq 1 ]
 }
 
 @test "timeout scales correctly with 25 windows" {
@@ -171,8 +178,8 @@ teardown() {
     local perm_timeout=$(( 30 * scale_factor ))
 
     # 25 windows -> scale_factor = 1 + 25/10 = 3
-    [[ $scale_factor -eq 3 ]]
-    [[ $perm_timeout -eq 90 ]]
+    assert [ "$scale_factor" -eq 3 ]
+    assert [ "$perm_timeout" -eq 90 ]
 }
 
 # --- Permission pattern tests ---
@@ -327,23 +334,23 @@ _load_fatal_pattern() {
     mkdir -p "$(dirname "$signal_file")"
     echo "rate_limited" > "$signal_file"
 
-    [[ -f "$TEST_DIR/state/pane-signals/signal-test-win" ]]
-    [[ "$(cat "$signal_file")" == "rate_limited" ]]
+    assert [ -f "$TEST_DIR/state/pane-signals/signal-test-win" ]
+    assert [ "$(cat "$signal_file")" == "rate_limited" ]
     # Must NOT exist in /tmp/
-    [[ ! -f "/tmp/zapat-pane-signal-test-win" ]]
+    assert [ ! -f "/tmp/zapat-pane-signal-test-win" ]
 }
 
 @test "signal file directory is created if missing" {
     # Ensure the pane-signals dir does not exist yet
-    [[ ! -d "$TEST_DIR/state/pane-signals" ]]
+    assert [ ! -d "$TEST_DIR/state/pane-signals" ]
 
     local window="new-win"
     local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
     mkdir -p "$(dirname "$signal_file")"
     echo "rate_limited" > "$signal_file"
 
-    [[ -d "$TEST_DIR/state/pane-signals" ]]
-    [[ -f "$signal_file" ]]
+    assert [ -d "$TEST_DIR/state/pane-signals" ]
+    assert [ -f "$signal_file" ]
 }
 
 @test "signal file cleanup removes the file" {
@@ -355,7 +362,7 @@ _load_fatal_pattern() {
     # Simulate cleanup (as done in monitor_session)
     rm -f "$signal_file"
 
-    [[ ! -f "$signal_file" ]]
+    assert [ ! -f "$signal_file" ]
 }
 
 @test "signal file path uses AUTOMATION_DIR when set" {
@@ -366,7 +373,7 @@ _load_fatal_pattern() {
     mkdir -p "$(dirname "$signal_file")"
     echo "rate_limited" > "$signal_file"
 
-    [[ -f "$custom_dir/state/pane-signals/signal-custom-dir-win" ]]
+    assert [ -f "$custom_dir/state/pane-signals/signal-custom-dir-win" ]
     rm -rf "$custom_dir"
     AUTOMATION_DIR="$TEST_DIR"
 }
@@ -378,7 +385,7 @@ _load_fatal_pattern() {
     mkdir -p "$(dirname "$signal_file")"
     echo "rate_limited" > "$signal_file"
 
-    [[ -f "$TEST_DIR/state/pane-signals/signal-fallback-win" ]]
+    assert [ -f "$TEST_DIR/state/pane-signals/signal-fallback-win" ]
     export AUTOMATION_DIR="$TEST_DIR"
 }
 
@@ -402,8 +409,8 @@ _load_fatal_pattern() {
     fi
 
     # Stale file should be gone, fresh file should remain
-    [[ ! -f "$throttle_dir/old-pane--permission" ]]
-    [[ -f "$throttle_dir/fresh-pane--rate_limit" ]]
+    assert [ ! -f "$throttle_dir/old-pane--permission" ]
+    assert [ -f "$throttle_dir/fresh-pane--rate_limit" ]
 }
 
 # --- Rate limit pattern tests ---

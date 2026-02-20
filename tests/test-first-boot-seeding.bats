@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for first-boot state bootstrapping in startup.sh
 
+load '../node_modules/bats-support/load'
+load '../node_modules/bats-assert/load'
+
 setup() {
     export TEST_DIR="$(mktemp -d)"
     export SCRIPT_DIR="$TEST_DIR"
@@ -82,7 +85,7 @@ teardown() {
 
 @test "first boot seeds issues when processed-issues.txt is empty" {
     # State files exist but are empty (0 bytes)
-    [[ ! -s "$TEST_DIR/state/processed-issues.txt" ]]
+    assert [ ! -s "$TEST_DIR/state/processed-issues.txt" ]
 
     # Run just the seeding snippet in isolation
     source "$TEST_DIR/lib/common.sh"
@@ -111,12 +114,12 @@ teardown() {
     fi
 
     # Verify seeded content
-    [[ $SEED_COUNT -eq 3 ]]
-    grep -q "owner/repo#1" "$TEST_DIR/state/processed-issues.txt"
-    grep -q "owner/repo#2" "$TEST_DIR/state/processed-issues.txt"
-    grep -q "owner/repo#3" "$TEST_DIR/state/processed-issues.txt"
-    grep -q "owner/repo#auto-1" "$TEST_DIR/state/processed-auto-triage.txt"
-    grep -q "owner/repo#1" "$TEST_DIR/state/processed-work.txt"
+    assert [ "$SEED_COUNT" -eq 3 ]
+    assert grep -q "owner/repo#1" "$TEST_DIR/state/processed-issues.txt"
+    assert grep -q "owner/repo#2" "$TEST_DIR/state/processed-issues.txt"
+    assert grep -q "owner/repo#3" "$TEST_DIR/state/processed-issues.txt"
+    assert grep -q "owner/repo#auto-1" "$TEST_DIR/state/processed-auto-triage.txt"
+    assert grep -q "owner/repo#1" "$TEST_DIR/state/processed-work.txt"
 }
 
 @test "first boot seeds PRs when processed-prs.txt is empty" {
@@ -139,9 +142,9 @@ teardown() {
         sort -u -o "$SCRIPT_DIR/state/processed-prs.txt" "$SCRIPT_DIR/state/processed-prs.txt" 2>/dev/null || true
     fi
 
-    [[ $PR_SEED_COUNT -eq 2 ]]
-    grep -q "owner/repo#10" "$TEST_DIR/state/processed-prs.txt"
-    grep -q "owner/repo#11" "$TEST_DIR/state/processed-prs.txt"
+    assert [ "$PR_SEED_COUNT" -eq 2 ]
+    assert grep -q "owner/repo#10" "$TEST_DIR/state/processed-prs.txt"
+    assert grep -q "owner/repo#11" "$TEST_DIR/state/processed-prs.txt"
 }
 
 @test "first boot skips seeding when state files already have content" {
@@ -161,10 +164,10 @@ teardown() {
         PR_SEED_COUNT=999  # Should not reach here
     fi
 
-    [[ $SEED_COUNT -eq 0 ]]
-    [[ $PR_SEED_COUNT -eq 0 ]]
+    assert [ "$SEED_COUNT" -eq 0 ]
+    assert [ "$PR_SEED_COUNT" -eq 0 ]
     # Original content untouched
-    [[ "$(cat "$TEST_DIR/state/processed-issues.txt")" == "owner/repo#99" ]]
+    assert [ "$(cat "$TEST_DIR/state/processed-issues.txt")" == "owner/repo#99" ]
 }
 
 @test "seeding deduplicates entries" {
@@ -180,5 +183,5 @@ teardown() {
 
     local count
     count=$(wc -l < "$SCRIPT_DIR/state/processed-issues.txt" | tr -d ' ')
-    [[ "$count" -eq 2 ]]
+    assert [ "$count" -eq 2 ]
 }
