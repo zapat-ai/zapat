@@ -43,7 +43,7 @@ export function Header({ className }: { className?: string }) {
       </div>
       <div className="flex items-center gap-5">
         <Suspense>
-          <ProjectSelector className="lg:hidden" />
+          <ProjectSelector className="lg:hidden rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-700 dark:bg-zinc-800/50" />
         </Suspense>
         <div aria-hidden="true" className="h-5 w-px bg-zinc-300 dark:bg-zinc-600 lg:hidden" />
         <ThemeToggle />

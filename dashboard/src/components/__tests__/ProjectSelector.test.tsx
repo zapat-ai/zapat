@@ -59,11 +59,26 @@ describe('ProjectSelector', () => {
     expect(classes).toContain('lg:left-0')
   })
 
-  it('does not render when there is only one project', () => {
+  it('shows static label (no dropdown) when there is only one project', () => {
     mockUseProject.mockReturnValue({
       project: undefined,
       projectName: 'All Projects',
       projects: [{ slug: 'only', name: 'Only Project' }],
+      setProject: mockSetProject,
+      isLoading: false,
+    })
+
+    render(<ProjectSelector />)
+    // Should render the project name as a static label, not a dropdown button
+    expect(screen.getByText('Only Project')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('renders nothing when there are zero projects', () => {
+    mockUseProject.mockReturnValue({
+      project: undefined,
+      projectName: 'All Projects',
+      projects: [],
       setProject: mockSetProject,
       isLoading: false,
     })
