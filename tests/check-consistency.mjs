@@ -268,6 +268,7 @@ const autoInjected = new Set([
   'REPO_MAP', 'BUILDER_AGENT', 'SECURITY_AGENT', 'PRODUCT_AGENT', 'UX_AGENT',
   'ORG_NAME', 'COMPLIANCE_RULES', 'PROJECT_CONTEXT', 'PROJECT_NAME',
   'SHARED_FOOTER',
+  'SUBAGENT_MODEL'
 ]);
 
 // Map of prompt template -> trigger script

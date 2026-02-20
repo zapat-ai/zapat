@@ -28,7 +28,11 @@ You are the engineering lead. You MUST create an Agent Team to implement this is
 
    - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates that the implementation matches the issue requirements and acceptance criteria. Ensures nothing is over-engineered or under-scoped. Reviews the final PR description for clarity.
 
-2. **Planning** (all teammates participate):
+   {{COMPLIANCE_RULES}}
+
+   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
+2. **Phase 1 — Planning** (all teammates participate):
    - Builder: Read relevant source files to understand existing patterns. Propose implementation plan.
    - Product manager: Confirm the scope is right — not too broad, not too narrow. Flag any ambiguity.
    - All share input with the lead before building starts.

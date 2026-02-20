@@ -34,6 +34,10 @@ You are the engineering lead. You MUST create an Agent Team to review this PR. D
    - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews any UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
      **CONDITIONAL**: Only spawn this agent if {{PR_FILES}} contains UI-related files (*.tsx, *.jsx, *.vue, *.svelte, *.css, *.scss, *.html, *.swift, *.kt). If no UI files are present, skip this agent entirely to save tokens.
 
+   {{COMPLIANCE_RULES}}
+
+   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
 2. **Team workflow**:
    - Platform engineer: Read surrounding source files for context. Check for memory issues, crash risks, error handling gaps, performance concerns. Evaluate architectural fit.
    - Security reviewer: Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.

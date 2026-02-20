@@ -25,6 +25,10 @@ You are the engineering lead. You MUST create an Agent Team to research and anal
      Include when the issue requires technical feasibility assessment or architecture review.
    - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Security implications. Include when the issue touches auth or data flows.
 
+   {{COMPLIANCE_RULES}}
+
+   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
    Spawn 3-5 teammates. Not every issue needs all roles. Choose based on the issue content.
 
 2. **Team workflow**:

@@ -630,7 +630,7 @@ load_project_context() {
 
 # Replace {{PLACEHOLDER}} in a file with values
 # Auto-injects: REPO_MAP, BUILDER_AGENT, SECURITY_AGENT, PRODUCT_AGENT, UX_AGENT,
-#               ORG_NAME, COMPLIANCE_RULES, PROJECT_CONTEXT
+#               ORG_NAME, COMPLIANCE_RULES, PROJECT_CONTEXT, SUBAGENT_MODEL
 # Usage: substitute_prompt "template.txt" "DATE=2026-02-06" "ISSUE_NUMBER=42"
 substitute_prompt() {
     local template="$1"
@@ -664,6 +664,16 @@ $(cat "$footer_file")"
     content="${content//\{\{PROJECT_CONTEXT\}\}/${project_context}}"
     content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
 
+    # Derive Task tool model shorthand from CLAUDE_SUBAGENT_MODEL env var
+    local _subagent_model="sonnet"
+    case "${CLAUDE_SUBAGENT_MODEL:-}" in
+        *opus*) _subagent_model="opus" ;;
+        *haiku*) _subagent_model="haiku" ;;
+        *sonnet*) _subagent_model="sonnet" ;;
+    esac
+    content="${content//\{\{SUBAGENT_MODEL\}\}/${_subagent_model}}"
+
+    # Apply explicit overrides
     # Cap PR_DIFF at configurable limit (~40,000 characters ≈ ~10,000 tokens)
     local max_diff_chars="${MAX_DIFF_CHARS:-40000}"
     local pr_number_val="" repo_val=""
