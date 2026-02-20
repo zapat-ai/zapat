@@ -702,6 +702,11 @@ classify_complexity() {
     local file_list="${4:-}"
     local issue_body="${5:-}"
 
+    # Validate numeric inputs defensively
+    [[ "$files_changed" =~ ^[0-9]+$ ]] || files_changed=0
+    [[ "$additions" =~ ^[0-9]+$ ]] || additions=0
+    [[ "$deletions" =~ ^[0-9]+$ ]] || deletions=0
+
     local total_changes=$((additions + deletions))
 
     # Check for security-sensitive directory paths in file list
