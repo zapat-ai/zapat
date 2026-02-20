@@ -1,17 +1,20 @@
 'use client'
 
-import { Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect } from 'react'
 import { CompletedTable } from '@/components/CompletedTable'
 import { Card, CardContent } from '@/components/ui/card'
 import { usePolling } from '@/hooks/usePolling'
+import { useProject } from '@/hooks/useProject'
 import { pipelineConfig } from '../../../pipeline.config'
 import type { PipelineItem } from '@/lib/types'
 
 function CompletedContent() {
-  const searchParams = useSearchParams()
-  const project = searchParams.get('project')
+  const { project, projectName } = useProject()
   const projectQuery = project ? `?project=${encodeURIComponent(project)}` : ''
+
+  useEffect(() => {
+    document.title = project ? `Completed - ${projectName}` : 'Completed - Zapat'
+  }, [project, projectName])
 
   const { data, isLoading } = usePolling<{ items: PipelineItem[] }>({
     url: `/api/completed${projectQuery}`,

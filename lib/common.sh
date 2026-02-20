@@ -695,7 +695,7 @@ $(cat "$footer_file")"
 
 --- DIFF TRUNCATED ---
 Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_chars} of ${total_chars} total chars).
-⚠️  Security and code quality reviewers MUST fetch the full diff before reviewing:
+⚠️  All reviewers MUST fetch the full diff before reviewing:
   gh pr diff ${pr_number_val} --repo ${repo_val}"
         fi
         capped_args+=("${key}=${value}")
@@ -709,4 +709,297 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
     done
 
     echo "$content"
+}
+
+# --- Complexity Classification ---
+
+# Classify task complexity to determine team sizing.
+# Returns: "solo" | "duo" | "full"
+#
+# Heuristics:
+#   solo: files_changed <= 2 AND additions+deletions <= 100 AND no security-sensitive paths
+#   duo:  files_changed <= 5 AND additions+deletions <= 300 AND no cross-service indicators
+#   full: everything else, OR security/auth/migration keywords, OR 3+ top-level directories
+#
+# Usage: classify_complexity FILES_CHANGED ADDITIONS DELETIONS FILE_LIST [ISSUE_BODY]
+classify_complexity() {
+    local files_changed="${1:-0}"
+    local additions="${2:-0}"
+    local deletions="${3:-0}"
+    local file_list="${4:-}"
+    local issue_body="${5:-}"
+
+    # Validate numeric inputs defensively
+    [[ "$files_changed" =~ ^[0-9]+$ ]] || files_changed=0
+    [[ "$additions" =~ ^[0-9]+$ ]] || additions=0
+    [[ "$deletions" =~ ^[0-9]+$ ]] || deletions=0
+
+    local total_changes=$((additions + deletions))
+
+    # Check for security-sensitive directory paths in file list
+    local has_security=false
+    if [[ -n "$file_list" ]] && echo "$file_list" | grep -qiE '(^|/)(auth|middleware|security|crypto|session|token|password|oauth|secrets|credentials|creds|keys|ssl|tls|certs|permissions|rbac|acl|migrations?|migrate)/'; then
+        has_security=true
+    fi
+
+    # Check for security-sensitive file patterns (not just directories)
+    if [[ "$has_security" == "false" && -n "$file_list" ]]; then
+        if echo "$file_list" | grep -qiE '(\.env|\.key|\.pem|\.p12|\.cert|\.github/workflows/)'; then
+            has_security=true
+        fi
+    fi
+
+    # Check for keywords in issue/PR body that indicate full review
+    local has_keywords=false
+    if [[ -n "$issue_body" ]] && echo "$issue_body" | grep -qiE '\b(security|authenticat|authoriz|migration|breaking.change|vulnerability|CVE|exploit|injection|XSS|CSRF|SSRF|encryption|decrypt|privilege|escalation|credential|secret|api.key)'; then
+        has_keywords=true
+    fi
+
+    # Count unique top-level directories from file list
+    local top_dirs=0
+    if [[ -n "$file_list" ]]; then
+        top_dirs=$(echo "$file_list" | sed 's|/.*||' | sort -u | wc -l | tr -d ' ')
+    fi
+
+    # Full: security concerns, large scope, or cross-service changes
+    if $has_security || $has_keywords || [[ "$top_dirs" -ge 3 ]] || \
+       [[ "$files_changed" -gt 5 ]] || [[ "$total_changes" -gt 300 ]]; then
+        echo "full"
+        return 0
+    fi
+
+    # Unknown scope: all metrics are zero and no file list — floor at duo
+    # This prevents issues (where diff is unavailable) from bypassing security review
+    if [[ "$files_changed" -eq 0 ]] && [[ "$total_changes" -eq 0 ]] && [[ -z "$file_list" ]]; then
+        echo "duo"
+        return 0
+    fi
+
+    # Solo: small, contained changes
+    if [[ "$files_changed" -le 2 ]] && [[ "$total_changes" -le 100 ]]; then
+        echo "solo"
+        return 0
+    fi
+
+    # Duo: medium scope
+    echo "duo"
+    return 0
+}
+
+# Generate team sizing instructions based on complexity level and job type.
+# Usage: generate_team_instructions COMPLEXITY JOB_TYPE
+#   COMPLEXITY: "solo" | "duo" | "full"
+#   JOB_TYPE: "implement" | "review" | "rework"
+#
+# NOTE: The output contains {{PLACEHOLDER}} tokens (e.g. {{BUILDER_AGENT}},
+# {{PR_NUMBER}}). These are intentional — they will be resolved downstream
+# by substitute_prompt() when the full prompt is assembled.
+generate_team_instructions() {
+    local complexity="${1:-full}"
+    local job_type="${2:-implement}"
+
+    case "$complexity" in
+        solo)
+            case "$job_type" in
+                implement)
+                    cat <<'SOLO_IMPL'
+You are the engineering lead. This is a **solo-complexity** task — small, contained changes.
+
+**Do NOT create a team.** Work alone. Implement the changes yourself directly.
+**Skip Phases 3-4 (Review/Iterate) below** — after implementation and tests, proceed directly to pushing and creating the PR.
+
+## Instructions
+
+1. **Read** relevant source files to understand existing patterns.
+2. **Implement** changes following existing code conventions.
+3. **Write tests** for all new/changed functions.
+4. **Run** any available tests/linters — iterate until they pass.
+5. **Self-review** for security issues (hardcoded secrets, injection risks, missing auth checks).
+6. **Commit** with conventional commit messages (feat:/fix:/refactor:).
+7. **Push and create PR**:
+   ```
+   git push origin HEAD
+   gh pr create --title "feat: [description]" --body "..." --label "zapat-review"
+   ```
+SOLO_IMPL
+                    ;;
+                review)
+                    cat <<'SOLO_REVIEW'
+You are the engineering lead. This is a **solo-complexity** PR — small, contained changes.
+
+**Do NOT create a team.** Review this PR yourself directly.
+
+## Instructions
+
+1. **Read** the diff and surrounding source files for context.
+2. **Check** for: correctness, security issues (secrets, injection, auth), error handling, test coverage.
+3. **Post** your review as a PR comment using the standard review format.
+SOLO_REVIEW
+                    ;;
+                rework)
+                    cat <<'SOLO_REWORK'
+You are the engineering lead. This is a **solo-complexity** rework — small, focused feedback.
+
+**Do NOT create a team.** Address the review feedback yourself directly.
+
+## Instructions
+
+1. **Read** all review feedback carefully.
+2. **Address** blocking issues first, then suggestions.
+3. **Commit** blocking fixes: `fix: address blocking review feedback on PR #{{PR_NUMBER}}`
+4. **Commit** suggestions separately: `refactor: implement review suggestions on PR #{{PR_NUMBER}}`
+5. **Push** to the existing branch. Do NOT force-push or rebase.
+SOLO_REWORK
+                    ;;
+            esac
+            ;;
+        duo)
+            case "$job_type" in
+                implement)
+                    cat <<'DUO_IMPL'
+You are the engineering lead. This is a **duo-complexity** task — moderate scope.
+
+**Create a SMALL team** with only the builder and one reviewer. Do NOT spawn the full team.
+**Skip Phases 3-4 (Review/Iterate) below** — after the security reviewer approves, proceed directly to pushing and creating the PR.
+
+## Team (2 agents only)
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn:
+
+   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Implements the code changes. This is the only teammate that writes code.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews all changes for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
+
+   Do NOT spawn ux-reviewer or product-manager for duo-complexity tasks.
+
+## Instructions
+
+1. **Phase 1 — Planning**: Builder reads source files, proposes implementation plan. Lead approves.
+2. **Phase 2 — Implementation**: Builder implements changes, writes tests, runs linters.
+3. **Phase 3 — Review**: Security reviewer checks for vulnerabilities. Lead validates requirements.
+4. **Phase 4 — Ship**: After reviewer approves, push and create PR.
+DUO_IMPL
+                    ;;
+                review)
+                    cat <<'DUO_REVIEW'
+You are the engineering lead. This is a **duo-complexity** PR — moderate scope.
+
+**Create a SMALL review team** with only one expert reviewer. Do NOT spawn the full team.
+
+## Team (2 agents only)
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn:
+
+   - **platform-engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Reviews code quality, architecture, patterns, performance, and correctness.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
+
+   Do NOT spawn ux-reviewer for duo-complexity reviews.
+
+## Instructions
+
+1. Both reviewers analyze the diff and surrounding code for context.
+2. Lead synthesizes findings into the standard review format.
+3. Post the review as a PR comment.
+DUO_REVIEW
+                    ;;
+                rework)
+                    cat <<'DUO_REWORK'
+You are the engineering lead. This is a **duo-complexity** rework — moderate feedback scope.
+
+**Create a SMALL team** with only the builder. Do NOT spawn the full team.
+
+## Team (2 agents only)
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn:
+
+   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Addresses ALL review feedback by making code changes.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Re-reviews changes for security vulnerabilities.
+
+   Do NOT spawn product-manager for duo-complexity rework.
+
+## Instructions
+
+1. **Phase 1 — Blocking Issues**: Builder addresses all blocking feedback, commits fixes.
+2. **Phase 2 — Suggestions**: Builder implements remaining suggestions, commits separately.
+3. **Phase 3 — Review**: Security reviewer validates fixes. Lead confirms requirements still met.
+DUO_REWORK
+                    ;;
+            esac
+            ;;
+        full|*)
+            case "$job_type" in
+                implement)
+                    cat <<'FULL_IMPL'
+You are the engineering lead. This is a **full-complexity** task — large scope, security-sensitive, or cross-service.
+
+You MUST create an Agent Team to implement this issue. Do NOT attempt to implement alone.
+
+**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT implement the issue yourself. The team provides essential review from security, UX, clinical, and product perspectives.**
+
+## Team
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
+
+   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Implements the code changes. This is the only teammate that writes code.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews all changes for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
+
+   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns. If no UI changes, focuses on API ergonomics and developer experience.
+
+   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates that the implementation matches the issue requirements and acceptance criteria. Ensures nothing is over-engineered or under-scoped. Reviews the final PR description for clarity.
+
+   {{COMPLIANCE_RULES}}
+FULL_IMPL
+                    ;;
+                review)
+                    cat <<'FULL_REVIEW'
+You are the engineering lead. This is a **full-complexity** PR — large scope, security-sensitive, or cross-service.
+
+You MUST create an Agent Team to review this PR. Do NOT attempt to review alone.
+
+**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT do the review yourself. The whole point is getting multiple expert perspectives.**
+
+## Team
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
+
+   - **platform-engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Reviews code quality, architecture, patterns, performance, and correctness. Reads the surrounding codebase to understand context.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, and OWASP vulnerabilities.
+
+   - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews any UI/UX changes for usability, accessibility, friction, and consistency with existing design patterns.
+
+   {{COMPLIANCE_RULES}}
+FULL_REVIEW
+                    ;;
+                rework)
+                    cat <<'FULL_REWORK'
+You are the engineering lead. This is a **full-complexity** rework — significant feedback requiring multiple perspectives.
+
+You MUST create an Agent Team to address review feedback on this PR. Do NOT attempt to do this alone.
+
+**CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation.**
+
+## Team
+
+1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are richly-defined expert personas (15-20KB each), not generic agents.
+
+   - **builder** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type from {{REPO_MAP}}).
+     Addresses ALL review feedback by making code changes. This is the only teammate that writes code.
+
+   - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Re-reviews all changes for security vulnerabilities. Validates that security-related feedback was addressed correctly.
+
+   - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Verifies that the reworked changes still meet the original requirements. Ensures feedback was addressed without scope creep or regression.
+FULL_REWORK
+                    ;;
+            esac
+            ;;
+    esac
 }

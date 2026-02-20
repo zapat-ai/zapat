@@ -15,9 +15,9 @@ export async function GET(request: Request) {
     const active = getActiveItems(project)
     const completed = getCompletedItems(project).slice(0, 5)
     return NextResponse.json({ items: [...active, ...completed] })
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch items' },
+      { error: 'Internal server error' },
       { status: 500 },
     )
   }

@@ -22,9 +22,9 @@ export async function GET(request: Request) {
 
     const metrics = getMetricsData(days, project)
     return NextResponse.json({ metrics })
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch metrics' },
+      { error: 'Internal server error' },
       { status: 500 },
     )
   }

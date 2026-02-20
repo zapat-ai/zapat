@@ -29,6 +29,7 @@ LABELS=(
     "agent-research|0075CA|Research and analyze, not code"
     "hold|B60205|Block auto-merge on this PR"
     "human-only|E4E669|Pipeline should not touch this item"
+    "agent-full-review|1D76DB|Force full team review regardless of complexity"
     # Tier 3 — Internal/status
     "zapat-triaging|CCCCCC|Triage in progress"
     "zapat-implementing|CCCCCC|Implementation in progress"

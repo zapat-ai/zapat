@@ -55,6 +55,9 @@ fi
 PR_TITLE=$(echo "$PR_JSON" | jq -r '.title // "No title"')
 PR_BODY=$(echo "$PR_JSON" | jq -r '.body // "No description"')
 PR_FILES=$(echo "$PR_JSON" | jq -r '.files[].path' 2>/dev/null | head -100 || echo "Unable to list files")
+PR_ADDITIONS=$(echo "$PR_JSON" | jq -r '.additions // 0')
+PR_DELETIONS=$(echo "$PR_JSON" | jq -r '.deletions // 0')
+PR_FILES_CHANGED=$(echo "$PR_JSON" | jq -r '.files | length' 2>/dev/null || echo "0")
 
 # --- Fetch Diff ---
 PR_DIFF=$(gh pr diff "$PR_NUMBER" --repo "$REPO" 2>/dev/null || echo "Unable to fetch diff")
@@ -96,6 +99,22 @@ trap '
     cleanup_on_exit "" "$ITEM_STATE_FILE" $?
 ' EXIT
 
+# --- Classify Complexity ---
+# Fetch PR labels for override check
+PR_LABELS=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '[.labels[].name] | join(", ")' 2>/dev/null || echo "")
+
+COMPLEXITY=$(classify_complexity "$PR_FILES_CHANGED" "$PR_ADDITIONS" "$PR_DELETIONS" "$PR_FILES" "$PR_BODY")
+
+# Override: agent-full-review label forces full team
+if echo "$PR_LABELS" | grep -qiw "agent-full-review"; then
+    COMPLEXITY="full"
+    log_info "Complexity overridden to 'full' by agent-full-review label"
+fi
+
+log_info "Complexity classification: $COMPLEXITY for PR #${PR_NUMBER}"
+_log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"review\",\"pr\":$PR_NUMBER,\"repo\":\"$REPO\""
+
+TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "review")
 # --- Copy slim CLAUDE.md into worktree ---
 cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$EFFECTIVE_PATH/CLAUDE.md"
 
@@ -117,6 +136,8 @@ FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/pr-review.txt" \
     "PR_BODY=$PR_BODY" \
     "PR_FILES=$PR_FILES" \
     "PR_DIFF=$PR_DIFF" \
+    "COMPLEXITY=$COMPLEXITY" \
+    "TEAM_SIZING_INSTRUCTIONS=$TEAM_INSTRUCTIONS" \
     "MENTION_CONTEXT=$MENTION_BLOCK")
 
 # Write prompt to temp file (avoids tmux send-keys escaping issues)

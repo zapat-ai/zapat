@@ -2,9 +2,12 @@ import { writeFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import { createServer } from 'http';
-import { getAutomationDir, getRepos } from '../lib/config.mjs';
+import net from 'net';
+import { getAutomationDir, getRepos, getProjects, getConfigValue } from '../lib/config.mjs';
 import { readMetrics, ensureDataDir } from '../lib/metrics.mjs';
 import { exec } from '../lib/exec.mjs';
+
+const VALID_SLUG = /^[a-zA-Z0-9_-]+$/;
 
 export function registerDashboardCommand(program) {
   program
@@ -12,35 +15,103 @@ export function registerDashboardCommand(program) {
     .description('Generate and optionally serve the pipeline dashboard')
     .option('--serve [port]', 'Start Next.js production server (default: 3000)')
     .option('--dev', 'Start Next.js dev server')
+    .option('--project <slug>', 'Scope dashboard to a specific project')
     .option('--static', 'Generate static HTML dashboard (legacy)')
     .action(runDashboard);
 }
 
-function runDashboard(opts) {
+/**
+ * Resolve the host for the dashboard.
+ * Defaults to 127.0.0.1 for security; set DASHBOARD_HOST=0.0.0.0 for LAN access.
+ */
+export function resolveHost() {
+  return process.env.DASHBOARD_HOST || '127.0.0.1';
+}
+
+/**
+ * Resolve the port for the dashboard.
+ * Priority: CLI flag → DASHBOARD_PORT_<SLUG> → DASHBOARD_PORT → 3000
+ */
+export function resolvePort(cliPort, projectSlug) {
+  if (cliPort && !isNaN(parseInt(cliPort))) return parseInt(cliPort);
+
+  if (projectSlug) {
+    const envKey = `DASHBOARD_PORT_${projectSlug.toUpperCase().replace(/-/g, '_')}`;
+    const perProjectPort = parseInt(getConfigValue(envKey, ''));
+    if (perProjectPort) return perProjectPort;
+  }
+
+  return parseInt(getConfigValue('DASHBOARD_PORT', '')) || 3000;
+}
+
+/**
+ * Check if a port is available by attempting to listen on it.
+ */
+function checkPort(port, host) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => { server.close(); resolve(true); });
+    server.listen(port, host);
+  });
+}
+
+async function runDashboard(opts) {
   const dashboardDir = join(getAutomationDir(), 'dashboard');
   const automationEnv = { ...process.env, AUTOMATION_DIR: getAutomationDir() };
+  const projectSlug = opts.project;
 
-  if (opts.dev) {
-    const devPort = parseInt(process.env.DASHBOARD_PORT) || 3000;
-    if (devPort < 1 || devPort > 65535) {
-      console.error(`Invalid DASHBOARD_PORT: ${devPort}. Must be 1-65535.`);
+  // Validate project slug if provided
+  if (projectSlug) {
+    if (!VALID_SLUG.test(projectSlug)) {
+      console.error(`Invalid project slug: "${projectSlug}". Use alphanumeric, hyphens, or underscores.`);
       process.exitCode = 1;
       return;
     }
-    console.log(`Starting Next.js dev server on port ${devPort}...`);
-    execSync(`npm run dev -- -H 127.0.0.1 -p ${devPort}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
+    const projects = getProjects();
+    if (projects.length > 0 && !projects.some(p => p.slug === projectSlug)) {
+      console.error(`Unknown project: "${projectSlug}". Available: ${projects.map(p => p.slug).join(', ')}`);
+      process.exitCode = 1;
+      return;
+    }
+    automationEnv.PROJECT_SLUG = projectSlug;
+  }
+
+  const host = resolveHost();
+
+  if (opts.dev) {
+    const devPort = resolvePort(undefined, projectSlug);
+    if (devPort < 1024 || devPort > 65535) {
+      console.error(`Invalid port: ${devPort}. Must be 1024-65535.`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!await checkPort(devPort, host)) {
+      console.error(`Port ${devPort} is already in use. Choose a different port or stop the existing process.`);
+      process.exitCode = 1;
+      return;
+    }
+    const label = projectSlug ? ` (project: ${projectSlug})` : '';
+    console.log(`Starting Next.js dev server on ${host}:${devPort}${label}...`);
+    execSync(`npm run dev -- -H ${host} -p ${devPort}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
     return;
   }
 
   if (opts.serve !== undefined && !opts.static) {
-    const port = parseInt(opts.serve) || parseInt(process.env.DASHBOARD_PORT) || 3000;
-    if (port < 1 || port > 65535) {
-      console.error(`Invalid port: ${port}. Must be 1-65535.`);
+    const port = resolvePort(opts.serve, projectSlug);
+    if (port < 1024 || port > 65535) {
+      console.error(`Invalid port: ${port}. Must be 1024-65535.`);
       process.exitCode = 1;
       return;
     }
-    console.log(`Starting Next.js production server on port ${port}...`);
-    execSync(`npm run start -- -H 127.0.0.1 -p ${port}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
+    if (!await checkPort(port, host)) {
+      console.error(`Port ${port} is already in use. Choose a different port or stop the existing process.`);
+      process.exitCode = 1;
+      return;
+    }
+    const label = projectSlug ? ` (project: ${projectSlug})` : '';
+    console.log(`Starting Next.js production server on ${host}:${port}${label}...`);
+    execSync(`npm run start -- -H ${host} -p ${port}`, { cwd: dashboardDir, stdio: 'inherit', env: automationEnv });
     return;
   }
 

@@ -3,6 +3,7 @@ import type { PipelineConfig } from './src/lib/types'
 export const pipelineConfig: PipelineConfig = {
   name: 'Agent Pipeline',
   refreshInterval: 60_000,
+  defaultProject: process.env.PROJECT_SLUG || undefined,
   stages: [
     { id: 'queued', label: 'Queued', color: 'blue' },
     { id: 'working', label: 'Working', color: 'yellow' },

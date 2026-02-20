@@ -14,9 +14,9 @@ export async function GET(request: Request) {
     }
     const status = getSystemStatus(project)
     return NextResponse.json(status)
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch health status' },
+      { error: 'Internal server error' },
       { status: 500 },
     )
   }

@@ -40,7 +40,7 @@ trap 'cleanup_on_exit "$SLOT_FILE" "$ITEM_STATE_FILE" $?' EXIT
 
 # --- Fetch PR Details ---
 PR_JSON=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-    --json title,body,headRefName 2>/dev/null)
+    --json title,body,headRefName,files,additions,deletions,labels 2>/dev/null)
 
 if [[ -z "$PR_JSON" ]]; then
     log_error "Failed to fetch PR #${PR_NUMBER} from ${REPO}"
@@ -50,6 +50,11 @@ fi
 PR_TITLE=$(echo "$PR_JSON" | jq -r '.title // "No title"')
 PR_BODY=$(echo "$PR_JSON" | jq -r '.body // "No description"')
 PR_BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName // ""')
+PR_FILES=$(echo "$PR_JSON" | jq -r '.files[].path' 2>/dev/null | head -100 || echo "")
+PR_ADDITIONS=$(echo "$PR_JSON" | jq -r '.additions // 0')
+PR_DELETIONS=$(echo "$PR_JSON" | jq -r '.deletions // 0')
+PR_FILES_CHANGED=$(echo "$PR_JSON" | jq -r '.files | length' 2>/dev/null || echo "0")
+PR_LABELS=$(echo "$PR_JSON" | jq -r '[.labels[].name] | join(", ")' 2>/dev/null || echo "")
 
 if [[ -z "$PR_BRANCH" ]]; then
     log_error "Could not determine branch for PR #${PR_NUMBER}"
@@ -130,6 +135,19 @@ git worktree add "$WORKTREE_DIR" "origin/${PR_BRANCH}" 2>/dev/null || {
 
 log_info "Worktree created at $WORKTREE_DIR on branch $PR_BRANCH"
 
+# --- Classify Complexity ---
+COMPLEXITY=$(classify_complexity "$PR_FILES_CHANGED" "$PR_ADDITIONS" "$PR_DELETIONS" "$PR_FILES" "$PR_BODY")
+
+# Override: agent-full-review label forces full team
+if echo "$PR_LABELS" | grep -qiw "agent-full-review"; then
+    COMPLEXITY="full"
+    log_info "Complexity overridden to 'full' by agent-full-review label"
+fi
+
+log_info "Complexity classification: $COMPLEXITY for rework PR #${PR_NUMBER}"
+_log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"rework\",\"pr\":$PR_NUMBER,\"repo\":\"$REPO\""
+
+TEAM_INSTRUCTIONS=$(generate_team_instructions "$COMPLEXITY" "rework")
 # --- Copy slim CLAUDE.md into worktree ---
 cp "$SCRIPT_DIR/CLAUDE-pipeline.md" "$WORKTREE_DIR/CLAUDE.md"
 
@@ -140,6 +158,8 @@ FINAL_PROMPT=$(substitute_prompt "$SCRIPT_DIR/prompts/rework-pr.txt" \
     "PR_TITLE=$PR_TITLE" \
     "PR_BODY=$PR_BODY" \
     "PR_BRANCH=$PR_BRANCH" \
+    "COMPLEXITY=$COMPLEXITY" \
+    "TEAM_SIZING_INSTRUCTIONS=$TEAM_INSTRUCTIONS" \
     "REVIEW_COMMENTS=$ALL_FEEDBACK" \
     "PR_REVIEWS=$PR_REVIEWS")
 
