@@ -59,7 +59,14 @@ describe('ProjectSelector', () => {
     expect(classes).toContain('lg:left-0')
   })
 
-  it('does not render when there is only one project', () => {
+  it('button has a visible border on mobile and transparent on desktop', () => {
+    render(<ProjectSelector />)
+
+    const button = screen.getByRole('button', { name: /Project: All Projects/i })
+    expect(button).toHaveClass('border', 'border-zinc-200', 'dark:border-zinc-700', 'lg:border-transparent')
+  })
+
+  it('renders a static label (no dropdown) when there is only one project', () => {
     mockUseProject.mockReturnValue({
       project: undefined,
       projectName: 'All Projects',
@@ -68,7 +75,8 @@ describe('ProjectSelector', () => {
       isLoading: false,
     })
 
-    const { container } = render(<ProjectSelector />)
-    expect(container.firstChild).toBeNull()
+    render(<ProjectSelector />)
+    expect(screen.getByText('Only Project')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })
