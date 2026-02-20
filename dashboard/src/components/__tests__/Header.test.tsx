@@ -68,4 +68,15 @@ describe('Header', () => {
     const divider = container.querySelector('[aria-hidden="true"]')
     expect(divider).toHaveClass('lg:hidden')
   })
+
+  it('mobile ProjectSelector has visual weight styling to distinguish from ThemeToggle', () => {
+    render(<Header />)
+
+    const selectors = screen.getAllByTestId('project-selector')
+    // The mobile one has lg:hidden and visual styling classes
+    const mobileSelector = selectors.find((el) => el.className.includes('lg:hidden'))
+    expect(mobileSelector).toBeTruthy()
+    expect(mobileSelector).toHaveClass('border', 'border-zinc-200', 'rounded-lg', 'bg-zinc-50')
+    expect(mobileSelector).toHaveClass('dark:border-zinc-700', 'dark:bg-zinc-800/50')
+  })
 })

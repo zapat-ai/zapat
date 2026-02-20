@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for tmux-helpers.sh: batch notifications and dynamic timeouts
 
+load '../node_modules/bats-support/load'
+load '../node_modules/bats-assert/load'
+
 setup() {
     export TEST_DIR="$(mktemp -d)"
     export SCRIPT_DIR="$TEST_DIR"
@@ -57,7 +60,8 @@ teardown() {
         return 0
     }
 
-    _pane_health_should_notify "test-pane" "rate_limit"
+    run _pane_health_should_notify "test-pane" "rate_limit"
+    assert_success
 }
 
 @test "_pane_health_should_notify throttles subsequent notifications" {
@@ -82,10 +86,12 @@ teardown() {
     }
 
     # First call should pass
-    _pane_health_should_notify "test-pane" "rate_limit"
+    run _pane_health_should_notify "test-pane" "rate_limit"
+    assert_success
 
     # Second call within cooldown should be throttled
-    ! _pane_health_should_notify "test-pane" "rate_limit"
+    run _pane_health_should_notify "test-pane" "rate_limit"
+    assert_failure
 }
 
 @test "_pane_health_should_notify uses batch-summary key for batched notifications" {
@@ -110,8 +116,9 @@ teardown() {
     }
 
     # Batch-summary key should work like any other key
-    _pane_health_should_notify "batch-summary" "test-job"
-    [[ -f "$TEST_DIR/state/pane-health-throttle/batch-summary--test-job" ]]
+    run _pane_health_should_notify "batch-summary" "test-job"
+    assert_success
+    assert [ -f "$TEST_DIR/state/pane-health-throttle/batch-summary--test-job" ]
 }
 
 # --- Dynamic timeout tests ---
@@ -123,20 +130,20 @@ teardown() {
     local perm_timeout=$(( ${TMUX_PERMISSIONS_TIMEOUT:-30} * 1 ))
     local ready_timeout=$(( ${TMUX_READINESS_TIMEOUT:-30} * 1 ))
 
-    [[ $perm_timeout -eq 30 ]]
-    [[ $ready_timeout -eq 30 ]]
+    assert [ "$perm_timeout" -eq 30 ]
+    assert [ "$ready_timeout" -eq 30 ]
 }
 
 @test "timeout respects TMUX_PERMISSIONS_TIMEOUT override" {
     export TMUX_PERMISSIONS_TIMEOUT=60
     local perm_timeout=$(( ${TMUX_PERMISSIONS_TIMEOUT:-30} * 1 ))
-    [[ $perm_timeout -eq 60 ]]
+    assert [ "$perm_timeout" -eq 60 ]
 }
 
 @test "timeout respects TMUX_READINESS_TIMEOUT override" {
     export TMUX_READINESS_TIMEOUT=45
     local ready_timeout=$(( ${TMUX_READINESS_TIMEOUT:-30} * 1 ))
-    [[ $ready_timeout -eq 45 ]]
+    assert [ "$ready_timeout" -eq 45 ]
 }
 
 @test "timeout scales with active windows > 5" {
@@ -148,8 +155,8 @@ teardown() {
     local perm_timeout=$(( 30 * scale_factor ))
 
     # 15 windows -> scale_factor = 1 + 15/10 = 2
-    [[ $scale_factor -eq 2 ]]
-    [[ $perm_timeout -eq 60 ]]
+    assert [ "$scale_factor" -eq 2 ]
+    assert [ "$perm_timeout" -eq 60 ]
 }
 
 @test "timeout does not scale with 5 or fewer windows" {
@@ -159,7 +166,7 @@ teardown() {
         scale_factor=$(( 1 + active_windows / 10 ))
     fi
 
-    [[ $scale_factor -eq 1 ]]
+    assert [ "$scale_factor" -eq 1 ]
 }
 
 @test "timeout scales correctly with 25 windows" {
@@ -171,8 +178,8 @@ teardown() {
     local perm_timeout=$(( 30 * scale_factor ))
 
     # 25 windows -> scale_factor = 1 + 25/10 = 3
-    [[ $scale_factor -eq 3 ]]
-    [[ $perm_timeout -eq 90 ]]
+    assert [ "$scale_factor" -eq 3 ]
+    assert [ "$perm_timeout" -eq 90 ]
 }
 
 # --- Permission pattern tests ---
@@ -331,11 +338,16 @@ _load_fatal_pattern() {
     [[ "$(cat "$signal_file")" == "rate_limited" ]]
     # Must NOT exist in /tmp/
     [[ ! -f "/tmp/zapat-pane-signal-test-win" ]]
+    assert [ -f "$TEST_DIR/state/pane-signals/signal-test-win" ]
+    assert [ "$(cat "$signal_file")" == "rate_limited" ]
+    # Must NOT exist in /tmp/
+    assert [ ! -f "/tmp/zapat-pane-signal-test-win" ]
 }
 
 @test "signal file directory is created if missing" {
     # Ensure the pane-signals dir does not exist yet
     [[ ! -d "$TEST_DIR/state/pane-signals" ]]
+    assert [ ! -d "$TEST_DIR/state/pane-signals" ]
 
     local window="new-win"
     local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
@@ -344,6 +356,8 @@ _load_fatal_pattern() {
 
     [[ -d "$TEST_DIR/state/pane-signals" ]]
     [[ -f "$signal_file" ]]
+    assert [ -d "$TEST_DIR/state/pane-signals" ]
+    assert [ -f "$signal_file" ]
 }
 
 @test "signal file cleanup removes the file" {
@@ -356,6 +370,7 @@ _load_fatal_pattern() {
     rm -f "$signal_file"
 
     [[ ! -f "$signal_file" ]]
+    assert [ ! -f "$signal_file" ]
 }
 
 @test "signal file path uses AUTOMATION_DIR when set" {
@@ -367,6 +382,7 @@ _load_fatal_pattern() {
     echo "rate_limited" > "$signal_file"
 
     [[ -f "$custom_dir/state/pane-signals/signal-custom-dir-win" ]]
+    assert [ -f "$custom_dir/state/pane-signals/signal-custom-dir-win" ]
     rm -rf "$custom_dir"
     AUTOMATION_DIR="$TEST_DIR"
 }
@@ -379,6 +395,7 @@ _load_fatal_pattern() {
     echo "rate_limited" > "$signal_file"
 
     [[ -f "$TEST_DIR/state/pane-signals/signal-fallback-win" ]]
+    assert [ -f "$TEST_DIR/state/pane-signals/signal-fallback-win" ]
     export AUTOMATION_DIR="$TEST_DIR"
 }
 
@@ -402,8 +419,252 @@ _load_fatal_pattern() {
     fi
 
     # Stale file should be gone, fresh file should remain
-    [[ ! -f "$throttle_dir/old-pane--permission" ]]
-    [[ -f "$throttle_dir/fresh-pane--rate_limit" ]]
+    assert [ ! -f "$throttle_dir/old-pane--permission" ]
+    assert [ -f "$throttle_dir/fresh-pane--rate_limit" ]
+}
+
+# --- Rate limit pattern tests ---
+
+@test "rate limit pattern matches 'Switch to extra'" {
+    _load_rate_limit_pattern
+    echo "Switch to extra usage" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Rate limit'" {
+    _load_rate_limit_pattern
+    echo "Rate limit exceeded" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'rate_limit'" {
+    _load_rate_limit_pattern
+    echo "error: rate_limit" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches '429'" {
+    _load_rate_limit_pattern
+    echo "HTTP 429 error" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Too Many Requests'" {
+    _load_rate_limit_pattern
+    echo "Too Many Requests" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Retry after'" {
+    _load_rate_limit_pattern
+    echo "Retry after 30 seconds" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern does NOT match normal output" {
+    _load_rate_limit_pattern
+    ! echo "Switching branches to main" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern does NOT match 'retry logic'" {
+    _load_rate_limit_pattern
+    ! echo "Added retry logic for API calls" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+# --- Account limit pattern tests ---
+
+@test "account limit pattern matches 'out of extra usage'" {
+    _load_account_limit_pattern
+    echo "You are out of extra usage" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'usage limit'" {
+    _load_account_limit_pattern
+    echo "You have reached your usage limit" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'plan limit'" {
+    _load_account_limit_pattern
+    echo "plan limit reached" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'You've reached'" {
+    _load_account_limit_pattern
+    echo "You've reached your monthly cap" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'resets' with digit" {
+    _load_account_limit_pattern
+    echo "Usage resets 5 hours from now" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern does NOT match normal output" {
+    _load_account_limit_pattern
+    ! echo "The deployment plan is ready" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+# --- Fatal error pattern tests ---
+
+@test "fatal pattern matches 'FATAL'" {
+    _load_fatal_pattern
+    echo "FATAL: unable to allocate memory" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'OOM'" {
+    _load_fatal_pattern
+    echo "OOM killer invoked" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'out of memory'" {
+    _load_fatal_pattern
+    echo "error: out of memory" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'Segmentation fault'" {
+    _load_fatal_pattern
+    echo "Segmentation fault (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'core dumped'" {
+    _load_fatal_pattern
+    echo "Aborted (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'panic:'" {
+    _load_fatal_pattern
+    echo "panic: runtime error" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'SIGKILL'" {
+    _load_fatal_pattern
+    echo "Process received SIGKILL" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern does NOT match normal error messages" {
+    _load_fatal_pattern
+    ! echo "Error: file not found" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern does NOT match 'panic button' in docs" {
+    _load_fatal_pattern
+    # 'panic:' requires the colon, so 'panic button' won't match
+    ! echo "Don't hit the panic button" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+# --- Rate limit pattern tests ---
+
+@test "rate limit pattern matches 'Switch to extra'" {
+    _load_rate_limit_pattern
+    echo "Switch to extra usage" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Rate limit'" {
+    _load_rate_limit_pattern
+    echo "Rate limit exceeded" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'rate_limit'" {
+    _load_rate_limit_pattern
+    echo "error: rate_limit" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches '429'" {
+    _load_rate_limit_pattern
+    echo "HTTP 429 error" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Too Many Requests'" {
+    _load_rate_limit_pattern
+    echo "Too Many Requests" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern matches 'Retry after'" {
+    _load_rate_limit_pattern
+    echo "Retry after 30 seconds" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern does NOT match normal output" {
+    _load_rate_limit_pattern
+    ! echo "Switching branches to main" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+@test "rate limit pattern does NOT match 'retry logic'" {
+    _load_rate_limit_pattern
+    ! echo "Added retry logic for API calls" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
+}
+
+# --- Account limit pattern tests ---
+
+@test "account limit pattern matches 'out of extra usage'" {
+    _load_account_limit_pattern
+    echo "You are out of extra usage" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'usage limit'" {
+    _load_account_limit_pattern
+    echo "You have reached your usage limit" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'plan limit'" {
+    _load_account_limit_pattern
+    echo "plan limit reached" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'You've reached'" {
+    _load_account_limit_pattern
+    echo "You've reached your monthly cap" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern matches 'resets' with digit" {
+    _load_account_limit_pattern
+    echo "Usage resets 5 hours from now" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+@test "account limit pattern does NOT match normal output" {
+    _load_account_limit_pattern
+    ! echo "The deployment plan is ready" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
+}
+
+# --- Fatal error pattern tests ---
+
+@test "fatal pattern matches 'FATAL'" {
+    _load_fatal_pattern
+    echo "FATAL: unable to allocate memory" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'OOM'" {
+    _load_fatal_pattern
+    echo "OOM killer invoked" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'out of memory'" {
+    _load_fatal_pattern
+    echo "error: out of memory" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'Segmentation fault'" {
+    _load_fatal_pattern
+    echo "Segmentation fault (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'core dumped'" {
+    _load_fatal_pattern
+    echo "Aborted (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'panic:'" {
+    _load_fatal_pattern
+    echo "panic: runtime error" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern matches 'SIGKILL'" {
+    _load_fatal_pattern
+    echo "Process received SIGKILL" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern does NOT match normal error messages" {
+    _load_fatal_pattern
+    ! echo "Error: file not found" | grep -qE "$PANE_PATTERN_FATAL"
+}
+
+@test "fatal pattern does NOT match 'panic button' in docs" {
+    _load_fatal_pattern
+    # 'panic:' requires the colon, so 'panic button' won't match
+    ! echo "Don't hit the panic button" | grep -qE "$PANE_PATTERN_FATAL"
 }
 
 # --- Rate limit pattern tests ---
