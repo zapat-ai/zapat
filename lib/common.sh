@@ -813,11 +813,11 @@ You are the engineering lead. Use these principles to guide every decision about
 1. **Customer obsession** — The end user's experience comes first. Code quality, reliability, and correctness are non-negotiable.
 2. **Deliver results** — Ship working code that meets acceptance criteria. Don't over-optimize process at the cost of delivery.
 3. **Earn trust** — Produce code that's safe, secure, and well-tested. When unsure, escalate to a human rather than guessing.
-4. **Insist on high standards** — Never cut corners on security, testing, or code quality, even for solo tasks. Solo means fewer reviewers, not lower standards.
-5. **Deep dive** — Understand the problem before writing code. Read surrounding code, check for existing patterns, verify assumptions.
+4. **Insist on high standards** — Never cut corners on security, testing, or code quality. The complexity classification determines your minimum team — never go below it. Use specialist reviewers; self-review is not a substitute.
+5. **Deep dive** — Understand the problem before writing code. Read surrounding code, check for existing patterns, verify assumptions. Go beyond the diff — check callers in unmodified files, trace data flows end-to-end.
 6. **Invent and simplify** — Prefer the simplest correct solution. Don't over-engineer.
 7. **Bias for action** — Make team/model decisions quickly based on available signals. Don't wait for perfect information.
-8. **Frugality** — Use resources wisely. Don't spawn agents or use expensive models when they won't improve the outcome. Every token spent should earn its keep.
+8. **Quality over speed** — Spawn the team the complexity warrants. A missed security issue or incorrect implementation costs far more to fix after merge than spawning an extra reviewer costs upfront.
 
 PRINCIPLES
 
@@ -836,16 +836,23 @@ PRINCIPLES
         implement)
             case "$complexity" in
                 solo) cat <<'REC_SOLO_IMPL'
-**Recommendation: Work solo.** No team needed for this scope.
-- Lead implements, writes tests, self-reviews for security, commits, and creates PR.
-- Skip team creation, review phases, and team shutdown steps in the workflow below.
+**Recommendation: Work solo.** Small scope — no team needed, but a rigorous security self-check is mandatory before creating the PR.
+- Lead implements, writes tests, commits, and creates PR.
+- Skip team creation and team shutdown steps in the workflow below.
+- **Mandatory pre-PR security checklist (do not skip):**
+  - [ ] No hardcoded secrets, API keys, tokens, or credentials
+  - [ ] No user-controlled input used in shell commands, SQL queries, or file paths without sanitization
+  - [ ] No sensitive data (PHI, PII, credentials) logged or included in error responses
+  - [ ] Auth checks are present wherever data is accessed or modified
+  - [ ] All callers of any modified function have been checked — including in unmodified files
 
 REC_SOLO_IMPL
                     ;;
                 duo) cat <<'REC_DUO_IMPL'
-**Recommendation: Small team (2 agents).**
+**Recommendation: Core team (3 agents).**
 - **builder** (`subagent_type: {{BUILDER_AGENT}}`): Implements code changes. Only teammate that writes code.
-- **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
+- **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities. Also checks all callers of modified functions in unmodified files.
+- **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates the implementation meets the issue's acceptance criteria. Ensures nothing is over-engineered or under-scoped.
 
 REC_DUO_IMPL
                     ;;
@@ -863,24 +870,24 @@ REC_FULL_IMPL
         review)
             case "$complexity" in
                 solo) cat <<'REC_SOLO_REVIEW'
-**Recommendation: Review solo.** No team needed for this scope.
-- Lead reads the diff, checks correctness/security/tests, posts review.
-- Skip team creation, reviewer steps, and team shutdown in the workflow below.
+**Recommendation: Minimum review team (2 agents).** Even small PRs require a security reviewer — do not review alone.
+- **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, correctness, and tests. Checks all callers of modified functions, including in unmodified files.
+- **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
 
 REC_SOLO_REVIEW
                     ;;
                 duo) cat <<'REC_DUO_REVIEW'
 **Recommendation: Small review team (2 agents).**
-- **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness.
+- **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness. Must read surrounding source files — not just the diff. Must check all callers of modified functions across the entire codebase, including unmodified files.
 - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
 
 REC_DUO_REVIEW
                     ;;
                 full|*) cat <<'REC_FULL_REVIEW'
-**Recommendation: Full review team (3 agents).**
-- **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness.
+**Recommendation: Full review team (3 agents). Platform-engineer is REQUIRED — do not go solo on full-complexity PRs.**
+- **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness. Must read surrounding source files — not just the diff. Must check all callers of modified functions across the entire codebase, including unmodified files.
 - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
-- **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, consistency.
+- **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, consistency. Skip if no UI files in PR.
 
 REC_FULL_REVIEW
                     ;;
@@ -888,15 +895,17 @@ REC_FULL_REVIEW
             ;;
         rework)
             cat <<'REC_REWORK'
-**Recommendation: Feedback-based sizing.**
-Read the review feedback first, then decide:
-- **Style/formatting nits only** → Work solo. No team needed.
-- **Security concerns mentioned** → Spawn **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`).
-- **Scope/requirements questioned** → Spawn **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`).
-- **Mixed feedback** → Spawn both.
-- Default: **builder** (`subagent_type: {{BUILDER_AGENT}}`) works solo to address rework.
+**Recommendation: Always spawn at minimum builder + security-reviewer.**
+A security reviewer is required after every rework — fixes to blocking issues can introduce new vulnerabilities, and a re-check after pushing is mandatory.
 
-Announce your classification before spawning: "Feedback classification: [style-only|security-concern|scope-question|mixed]. Team: [solo|+security|+product|+security+product]."
+Read the review feedback, then decide on additional roles:
+- **Any blocking issues present** → Spawn **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`). Required — not optional.
+- **Security concerns mentioned** → Spawn **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`). Required.
+- **Scope/requirements questioned** → Also spawn **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`).
+- **Mixed feedback** → Spawn both security-reviewer and product-manager.
+- **Style/formatting nits only (no blocking issues)** → Builder works solo, but must run the mandatory security self-check before pushing.
+
+Announce your classification before spawning: "Feedback classification: [blocking-issues|security-concern|scope-question|style-only]. Team: [+security|+security+product|solo-with-checklist]."
 
 REC_REWORK
             ;;
@@ -933,10 +942,10 @@ ROLES
     cat <<'AUTHORITY'
 ## Your Authority as Lead
 
-The complexity classification and team recommendation above are **advisory, not mandatory**. You have full authority to:
-- **Adjust team size** — Add or remove agents based on what you see in the code. A "solo" recommendation doesn't prevent you from spawning a security reviewer if you spot auth code.
-- **Change model assignments** — Upgrade to opus for security-critical reviews, downgrade to haiku for simple validation.
-- **Skip agents** — If the UX reviewer has nothing to review (no UI files), don't spawn one.
+The complexity classification sets the **minimum** team — you may always add agents, never remove required ones. Your authority:
+- **Upgrade team size** — Always allowed. If you see auth code in a "solo" PR, spawn a security reviewer.
+- **Upgrade model assignments** — Upgrade subagents to opus for security-critical, auth-sensitive, or cryptographic code. The default is sonnet.
+- **Skip the UX reviewer only** — The UX reviewer may be skipped if there are genuinely no UI files in the PR (*.tsx, *.jsx, *.swift, *.kt, *.html, *.css, etc.). All other required roles must be spawned.
 - **Add agents** — If the task touches compliance-sensitive areas, add a compliance reviewer even if not recommended.
 
 Ground your decisions in the Leadership Principles above. If you lack sufficient information to make a confident decision, add a comment asking for human guidance rather than guessing.

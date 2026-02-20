@@ -16,7 +16,7 @@
 
 ## Workflow
 
-If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. If working solo, skip team creation steps.
+If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. If working solo (only for `solo` complexity), skip team creation steps.
 
 1. **Phase 1 — Planning** (if team: all participate; if solo: plan yourself):
    - Read relevant source files to understand existing patterns. Propose implementation plan.
@@ -59,7 +59,7 @@ If you are spawning a team, your **FIRST action** must be to call the `TeamCreat
 
 5. **Iterate & Ship**:
    - If team: Builder addresses all feedback. After all reviewers approve, push and create PR.
-   - If solo: Self-review for security issues (hardcoded secrets, injection risks, missing auth checks), then push and create PR.
+   - If solo: Complete the mandatory security checklist from the task assessment before pushing. Check all callers of any modified function in unmodified files. Then push and create PR.
    ```
    git push origin HEAD
    gh pr create --title "feat: [description]" --body "..." --label "zapat-review"

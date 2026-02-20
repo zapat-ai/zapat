@@ -20,7 +20,7 @@
 
 ## Workflow
 
-If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. If working solo, skip team creation steps.
+If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. Only skip team creation if the feedback is confirmed style-nits-only with no blocking issues.
 
 1. **Analyze Feedback**:
    Read all review feedback carefully. Classify each piece using the Feedback Triage Guide below. Announce your classification and team decision before proceeding.

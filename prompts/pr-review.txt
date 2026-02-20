@@ -23,17 +23,17 @@
 
 ## Workflow
 
-If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. If working solo, skip team creation steps.
+Your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. Always spawn a team — do not review alone.
 
-1. **Team Setup** (skip if working solo):
+1. **Team Setup**:
    - Create the team and spawn reviewers per the recommendation above.
    - **CONDITIONAL UX reviewer**: Only spawn a ux-reviewer if {{PR_FILES}} contains UI-related files (*.tsx, *.jsx, *.vue, *.svelte, *.css, *.scss, *.html, *.swift, *.kt). If no UI files are present, skip this agent entirely.
+   - **All other roles are required** — platform-engineer and security-reviewer must always be spawned regardless of PR size.
 
 2. **Review**:
-   - If you spawned a platform-engineer: Read surrounding source files for context. Check for memory issues, crash risks, error handling gaps, performance concerns. Evaluate architectural fit.
-   - If you spawned a security reviewer: Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.
-   - If you spawned a UX reviewer: Evaluate for friction, accessibility, responsive design, and consistency.
-   - If working solo: Cover all the above checks yourself.
+   - **platform-engineer**: Read surrounding source files — not just the diff. For every function **modified** by this PR, find all callers across the entire codebase (including unmodified files) and verify they correctly handle the new behavior. Check for crash risks, unhandled rejections, error handling gaps, and performance concerns.
+   - **security-reviewer**: Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.
+   - **UX reviewer** (if spawned): Evaluate for friction, accessibility, responsive design, and consistency.
    - All teammates send their review to you (the lead). You synthesize into the final review.
 
 3. **Review guidelines — DO NOT flag**:
@@ -42,7 +42,7 @@ If you are spawning a team, your **FIRST action** must be to call the `TeamCreat
    - SwiftUI patterns that differ from latest WWDC but work fine
    - Patterns already used elsewhere in the codebase
 
-4. **Synthesize the final review** from all teammate inputs (or your own analysis if solo). Use this format:
+4. **Synthesize the final review** from all teammate inputs. Use this format:
 
 ## PR Review — #{{PR_NUMBER}}: {{PR_TITLE}}
 
@@ -85,7 +85,7 @@ List each suggestion with a clear, actionable description. Prefix each with `- [
 gh pr comment {{PR_NUMBER}} --repo {{REPO}} --body "YOUR_REVIEW_OUTPUT"
 ```
 
-6. **Shut down the team** when done (skip if working solo).
+6. **Shut down the team** when done.
 
 ### Safety Notes
 - All teammates are read-only — no code changes, only review
