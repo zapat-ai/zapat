@@ -527,3 +527,91 @@ _load_fatal_pattern() {
     # 'panic:' requires the colon, so 'panic button' won't match
     ! echo "Don't hit the panic button" | grep -qE "$PANE_PATTERN_FATAL"
 }
+
+# --- sanitize_pane_content tests ---
+
+_load_sanitize_function() {
+    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+    # Source just the sanitize function by extracting it
+    eval "$(sed -n '/^sanitize_pane_content()/,/^}/p' "$src")"
+}
+
+@test "sanitize_pane_content strips backtick command substitution" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content '`whoami`')
+    [[ "$result" == "whoami" ]]
+}
+
+@test "sanitize_pane_content strips dollar-paren command substitution" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content '$(rm -rf /)')
+    [[ "$result" == "(rm -rf /)" ]]
+}
+
+@test "sanitize_pane_content strips dollar-brace variable expansion" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content '${PATH}')
+    [[ "$result" == "{PATH}" ]]
+}
+
+@test "sanitize_pane_content strips backslashes" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content 'line1\nline2')
+    [[ "$result" == "line1nline2" ]]
+}
+
+@test "sanitize_pane_content preserves normal error messages" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content "FATAL: unable to allocate memory")
+    [[ "$result" == "FATAL: unable to allocate memory" ]]
+}
+
+@test "sanitize_pane_content preserves OOM message" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content "OOM killer invoked on pid 12345")
+    [[ "$result" == "OOM killer invoked on pid 12345" ]]
+}
+
+@test "sanitize_pane_content handles empty input" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content "")
+    [[ "$result" == "" ]]
+}
+
+@test "sanitize_pane_content handles multiline input" {
+    _load_sanitize_function
+    local input
+    input=$(printf 'line1 $(cmd)\nline2 `evil`')
+    local result
+    result=$(sanitize_pane_content "$input")
+    # Dollar sign, backticks stripped; newline preserved in variable
+    [[ "$result" == "$(printf 'line1 (cmd)\nline2 evil')" ]]
+}
+
+@test "sanitize_pane_content strips nested metacharacters" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content '$(echo `id`)')
+    [[ "$result" == "(echo id)" ]]
+}
+
+@test "sanitize_pane_content preserves unicode characters" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content "Error: file not found — ñoño ✓")
+    [[ "$result" == "Error: file not found — ñoño ✓" ]]
+}
+
+@test "sanitize_pane_content strips all dollar signs in mixed content" {
+    _load_sanitize_function
+    local result
+    result=$(sanitize_pane_content 'FATAL: $HOME $(whoami) ${USER}')
+    [[ "$result" == "FATAL: HOME (whoami) {USER}" ]]
+}
