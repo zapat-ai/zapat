@@ -7,9 +7,12 @@ TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
 # Patterns for detecting stuck panes
 # Permission pattern uses exact Claude CLI prompt phrases to avoid false positives
-# from status bar text ("bypass permissions on") and code review output (IAM policies).
+# from code review output (IAM policies, etc.).
+# Bypass pattern matches the permission mode prompt (shift+tab to cycle) — distinct
+# from status bar text and requires shift+tab (\033[Z) rather than Enter to resolve.
 PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
 PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
+PANE_PATTERN_BYPASS="(shift\+tab to cycle)"
 PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|wants to use the .* tool|approve this action)"
 PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
 
@@ -220,7 +223,23 @@ check_pane_health() {
             continue
         fi
 
-        # Priority 2: Permission prompt
+        # Priority 2a: Bypass permissions mode prompt (shift+tab to cycle)
+        # Requires shift+tab (\033[Z) to cycle into bypass mode, not Enter.
+        if echo "$content" | grep -qE "$PANE_PATTERN_BYPASS"; then
+            _log_structured "warn" "Bypass permissions prompt detected in pane ${pane_id}" \
+                "\"type\":\"pane_health\",\"issue\":\"bypass_permission\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+
+            if [[ "$auto_resolve" == "true" ]]; then
+                tmux send-keys -t "${TMUX_SESSION}:${window}.${pane_idx}" "$(printf '\033[Z')"
+                log_info "Auto-resolved bypass permissions prompt in pane ${pane_id}"
+            fi
+
+            permission_count=$((permission_count + 1))
+            permission_panes="${permission_panes:+${permission_panes}, }${pane_id}"
+            continue
+        fi
+
+        # Priority 2b: Permission prompt
         if echo "$content" | grep -qE "$PANE_PATTERN_PERMISSION"; then
             _log_structured "warn" "Permission prompt detected in pane ${pane_id}" \
                 "\"type\":\"pane_health\",\"issue\":\"permission\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
