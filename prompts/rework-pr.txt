@@ -43,6 +43,8 @@ You are the engineering lead. You MUST create an Agent Team to address review fe
 
    This prevents spawning a full 3-agent team for trivial one-line fixes.
 
+   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
 2. **Team workflow**:
 
    **Phase 1 — Blocking Issues (must fix):**

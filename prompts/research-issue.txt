@@ -27,6 +27,8 @@ You are the engineering lead. You MUST create an Agent Team to research and anal
 
    {{COMPLIANCE_RULES}}
 
+   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
    Spawn 3-5 teammates. Not every issue needs all roles. Choose based on the issue content.
 
 2. **Team workflow**:

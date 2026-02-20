@@ -36,6 +36,8 @@ You are the engineering lead. You MUST create an Agent Team to review this PR. D
 
    {{COMPLIANCE_RULES}}
 
+   **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
+
 2. **Team workflow**:
    - Platform engineer: Read surrounding source files for context. Check for memory issues, crash risks, error handling gaps, performance concerns. Evaluate architectural fit.
    - Security reviewer: Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.
