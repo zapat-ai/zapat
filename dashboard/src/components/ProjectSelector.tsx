@@ -141,6 +141,7 @@ export function ProjectSelector({ className }: { className?: string }) {
         aria-label={`Project: ${projectName}`}
         className={cn(
           'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition',
+          'border border-zinc-200 dark:border-zinc-700 lg:border-transparent',
           'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100',
           'dark:text-zinc-400 dark:hover:text-white dark:hover:bg-zinc-800',
           open && 'bg-zinc-100 dark:bg-zinc-800',
