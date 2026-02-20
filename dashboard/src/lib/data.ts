@@ -14,11 +14,24 @@ function getAutomationDir(): string {
   return process.env.AUTOMATION_DIR || join(process.cwd(), '..')
 }
 
+// --- Simple TTL cache (module-level, survives across requests in same process) ---
+const TTL_MS = parseInt(process.env.DASHBOARD_CACHE_TTL_MS ?? '30000', 10)
+const _cache = new Map<string, { value: string | null; expires: number }>()
+
+function cachedExec(cmd: string, ttl = TTL_MS): string | null {
+  const now = Date.now()
+  const hit = _cache.get(cmd)
+  if (hit && hit.expires > now) return hit.value
+  const value = exec(cmd)
+  _cache.set(cmd, { value, expires: now + ttl })
+  return value
+}
+
 function exec(cmd: string): string | null {
   try {
     return execSync(cmd, {
       encoding: 'utf-8',
-      timeout: 30000,
+      timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim()
   } catch {
@@ -30,7 +43,7 @@ function execFull(cmd: string): { stdout: string; stderr: string; exitCode: numb
   try {
     const stdout = execSync(cmd, {
       encoding: 'utf-8',
-      timeout: 30000,
+      timeout: 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim()
     return { stdout, stderr: '', exitCode: 0 }
@@ -134,7 +147,7 @@ export function getActiveItems(project?: string): PipelineItem[] {
   const items: PipelineItem[] = []
 
   for (const { repo } of repos) {
-    const prJson = exec(
+    const prJson = cachedExec(
       `gh pr list --repo "${repo}" --json number,title,labels,state,url,createdAt --state open --limit 50`,
     )
     if (prJson) {
@@ -165,7 +178,7 @@ export function getActiveItems(project?: string): PipelineItem[] {
       }
     }
 
-    const issueJson = exec(
+    const issueJson = cachedExec(
       `gh issue list --repo "${repo}" --json number,title,labels,state,url,createdAt --state open --limit 50`,
     )
     if (issueJson) {
@@ -205,7 +218,7 @@ export function getCompletedItems(project?: string): PipelineItem[] {
   const items: PipelineItem[] = []
 
   for (const { repo } of repos) {
-    const prJson = exec(
+    const prJson = cachedExec(
       `gh pr list --repo "${repo}" --json number,title,labels,url,mergedAt,headRefName --state merged --limit 20`,
     )
     if (prJson) {
@@ -229,7 +242,7 @@ export function getCompletedItems(project?: string): PipelineItem[] {
       }
     }
 
-    const issueJson = exec(
+    const issueJson = cachedExec(
       `gh issue list --repo "${repo}" --json number,title,labels,url,closedAt --state closed --limit 20`,
     )
     if (issueJson) {
@@ -344,8 +357,10 @@ export function getHealthChecks(_project?: string): HealthCheck[] {
     checks.push({ name: 'stale-slots', status: 'ok', message: 'No slot directory' })
   }
 
-  // Check gh auth
-  const ghCheck = execFull('gh auth status')
+  // Check gh auth (cache 5 min — rarely changes)
+  const ghAuthCached = cachedExec('gh auth status 2>&1; echo $?', 300000)
+  const ghAuthOk = ghAuthCached !== null && !ghAuthCached.includes('not logged')
+  const ghCheck = { exitCode: ghAuthOk ? 0 : 1 }
   if (ghCheck.exitCode === 0) {
     checks.push({ name: 'gh-auth', status: 'ok', message: 'GitHub CLI authenticated' })
   } else {
@@ -376,22 +391,23 @@ export function getHealthChecks(_project?: string): HealthCheck[] {
     checks.push({ name: 'failed-items', status: 'ok', message: 'No items directory' })
   }
 
-  // Check stuck panes
+  // Check stuck panes (tmux calls use 5s TTL — need to be reasonably fresh)
+  const TMUX_TTL = 5000
   const tmuxSessionExists = checks.some(c => c.name === 'tmux-session' && c.status === 'ok')
   if (tmuxSessionExists) {
-    const windowsOutput = exec('tmux list-windows -t zapat -F "#{window_name}" 2>/dev/null')
+    const windowsOutput = cachedExec('tmux list-windows -t zapat -F "#{window_name}" 2>/dev/null', TMUX_TTL)
     if (windowsOutput) {
       const windows = windowsOutput.split('\n').filter(Boolean)
       let stuckPanes: string[] = []
       const ratePattern = /Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after/
-      const permPattern = /Allow|Deny|permission|Do you want to|approve this/
+      const permPattern = /Allow|Deny|permission|Do you want to|approve this|shift\+tab to cycle/
       const fatalPattern = /FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL/
 
       for (const win of windows) {
-        const panesOutput = exec(`tmux list-panes -t "zapat:${win}" -F "#{pane_index}" 2>/dev/null`)
+        const panesOutput = cachedExec(`tmux list-panes -t "zapat:${win}" -F "#{pane_index}" 2>/dev/null`, TMUX_TTL)
         if (!panesOutput) continue
         for (const paneIdx of panesOutput.split('\n').filter(Boolean)) {
-          const content = exec(`tmux capture-pane -t "zapat:${win}.${paneIdx}" -p 2>/dev/null`)
+          const content = cachedExec(`tmux capture-pane -t "zapat:${win}.${paneIdx}" -p 2>/dev/null`, TMUX_TTL)
           if (!content) continue
           if (ratePattern.test(content)) {
             stuckPanes.push(`${win}.${paneIdx}: rate limit`)
@@ -405,7 +421,7 @@ export function getHealthChecks(_project?: string): HealthCheck[] {
 
       if (stuckPanes.length === 0) {
         const totalPanes = windows.reduce((sum, win) => {
-          const p = exec(`tmux list-panes -t "zapat:${win}" -F "#{pane_index}" 2>/dev/null`)
+          const p = cachedExec(`tmux list-panes -t "zapat:${win}" -F "#{pane_index}" 2>/dev/null`, TMUX_TTL)
           return sum + (p ? p.split('\n').filter(Boolean).length : 0)
         }, 0)
         checks.push({
@@ -480,7 +496,7 @@ export function getSystemStatus(project?: string): SystemStatus {
   const sessionCheck = execFull('tmux has-session -t zapat')
   const sessionExists = sessionCheck.exitCode === 0
 
-  const windowCountStr = exec('tmux list-windows -t zapat 2>/dev/null | wc -l')
+  const windowCountStr = cachedExec('tmux list-windows -t zapat 2>/dev/null | wc -l', 5000)
   const windowCount = windowCountStr ? parseInt(windowCountStr.trim()) : 0
 
   const slotDir = join(automationDir, 'state', 'agent-work-slots')
