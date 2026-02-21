@@ -187,6 +187,42 @@ should_process_item() {
     return 0  # Ready to process
 }
 
+# Reset a completed/abandoned item back to pending (for reopened issues/PRs)
+# Usage: reset_completed_item "owner/repo" "issue" "123" ["project-slug"]
+# Returns: 0 if state was reset, 1 if no-op
+reset_completed_item() {
+    local repo="$1" type="$2" number="$3"
+    local project="${4:-${CURRENT_PROJECT:-default}}"
+    local key="${project}--${repo//\//-}_${type}_${number}"
+    local state_file="$ITEM_STATE_DIR/${key}.json"
+
+    if [[ ! -f "$state_file" ]]; then
+        return 1  # No state file — nothing to reset
+    fi
+
+    local status
+    status=$(jq -r '.status' "$state_file" 2>/dev/null || echo "unknown")
+
+    if [[ "$status" != "completed" && "$status" != "abandoned" ]]; then
+        return 1  # Only reset completed/abandoned items
+    fi
+
+    local now
+    now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+    local tmp_file="${state_file}.tmp"
+    jq --arg now "$now" '
+        .status = "pending" |
+        .updated_at = $now |
+        .attempts = 0 |
+        .last_error = null |
+        .next_retry_after = null
+    ' "$state_file" > "$tmp_file" && mv "$tmp_file" "$state_file"
+
+    log_info "Reset reopened item to pending: ${key}"
+    return 0
+}
+
 # List all items that are ready for retry
 # Usage: list_retryable_items ["project-slug"]
 #        If project is given, only return items for that project.

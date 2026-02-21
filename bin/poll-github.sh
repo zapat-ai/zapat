@@ -113,6 +113,30 @@ PROCESSED_REBASE="$STATE_DIR/processed-rebase.txt"
 LAST_MENTION_POLL="$STATE_DIR/last-mention-poll.txt"
 touch "$PROCESSED_PRS" "$PROCESSED_ISSUES" "$PROCESSED_WORK" "$PROCESSED_REWORK" "$PROCESSED_WRITE_TESTS" "$PROCESSED_RESEARCH" "$PROCESSED_MENTIONS" "$PROCESSED_AUTO_TRIAGE" "$PROCESSED_REBASE"
 
+# --- Reopened Item Helpers ---
+# Remove an exact key from a processed file (whole-line match to avoid substring hits)
+# Usage: remove_from_processed_file "file" "key"
+remove_from_processed_file() {
+    local file="$1" key="$2"
+    [[ -f "$file" ]] || return 0
+    local tmp="${file}.tmp"
+    grep -vxF "$key" "$file" > "$tmp" 2>/dev/null || true
+    mv "$tmp" "$file"
+}
+
+# Check if an open item was reopened (completed state but still open on GitHub).
+# If so, reset its state and remove it from the processed file so it gets re-processed.
+# Returns 0 if item was reopened (caller should continue processing), 1 otherwise (caller should skip).
+check_reopened_item() {
+    local processed_file="$1" key="$2" repo="$3" type="$4" num="$5" project="$6"
+    if reset_completed_item "$repo" "$type" "$num" "$project"; then
+        remove_from_processed_file "$processed_file" "$key"
+        log_info "Reopened item detected: $key — re-processing"
+        return 0
+    fi
+    return 1
+}
+
 # --- Defense-in-depth: detect unseeded state files ---
 # If processed-issues.txt AND processed-prs.txt are both empty, startup.sh
 # hasn't seeded yet. Polling now would treat every open item as new (issue #4).
@@ -339,7 +363,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         # Skip if already processed (legacy file + item state)
         if grep -qF "$PR_KEY" "$PROCESSED_PRS"; then
-            continue
+            check_reopened_item "$PROCESSED_PRS" "$PR_KEY" "$repo" "pr" "$PR_NUM" "$project_slug" || continue
         fi
         if ! should_process_item "$repo" "pr" "$PR_NUM" "$project_slug"; then
             continue
@@ -375,7 +399,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         # Skip if already processed
         if grep -qF "$REVIEW_KEY" "$PROCESSED_PRS"; then
-            continue
+            check_reopened_item "$PROCESSED_PRS" "$REVIEW_KEY" "$repo" "pr" "$REVIEW_NUM" "$project_slug" || continue
         fi
         if ! should_process_item "$repo" "pr" "$REVIEW_NUM" "$project_slug"; then
             continue
@@ -411,7 +435,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         # Skip if already processed (legacy file + item state)
         if grep -qF "$ISSUE_KEY" "$PROCESSED_ISSUES"; then
-            continue
+            check_reopened_item "$PROCESSED_ISSUES" "$ISSUE_KEY" "$repo" "issue" "$ISSUE_NUM" "$project_slug" || continue
         fi
         if ! should_process_item "$repo" "issue" "$ISSUE_NUM" "$project_slug"; then
             continue
@@ -447,7 +471,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         # Skip if already processed (legacy file + item state)
         if grep -qF "$WORK_KEY" "$PROCESSED_WORK"; then
-            continue
+            check_reopened_item "$PROCESSED_WORK" "$WORK_KEY" "$repo" "work" "$WORK_NUM" "$project_slug" || continue
         fi
         if ! should_process_item "$repo" "work" "$WORK_NUM" "$project_slug"; then
             continue
@@ -489,7 +513,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         # Skip if already processed (legacy file + item state)
         if grep -qF "$REWORK_KEY" "$PROCESSED_REWORK"; then
-            continue
+            check_reopened_item "$PROCESSED_REWORK" "$REWORK_KEY" "$repo" "rework" "$REWORK_NUM" "$project_slug" || continue
         fi
         if ! should_process_item "$repo" "rework" "$REWORK_NUM" "$project_slug"; then
             continue
@@ -524,7 +548,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
         TEST_KEY="${repo}#test-pr${TEST_NUM}"
 
         if ! should_process_item "$repo" "test" "$TEST_NUM" "$project_slug"; then
-            continue
+            # No processed file for zapat-testing; check if reopened via state alone
+            reset_completed_item "$repo" "test" "$TEST_NUM" "$project_slug" || continue
         fi
 
         if ! should_process "$TEST_LABELS" "$TEST_ASSIGNEES"; then
@@ -554,7 +579,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         # Skip if already processed (legacy file + item state)
         if grep -qF "$WT_KEY" "$PROCESSED_WRITE_TESTS"; then
-            continue
+            check_reopened_item "$PROCESSED_WRITE_TESTS" "$WT_KEY" "$repo" "write-tests" "$WT_NUM" "$project_slug" || continue
         fi
         if ! should_process_item "$repo" "write-tests" "$WT_NUM" "$project_slug"; then
             continue
@@ -590,7 +615,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         # Skip if already processed (legacy file + item state)
         if grep -qF "$RESEARCH_KEY" "$PROCESSED_RESEARCH"; then
-            continue
+            check_reopened_item "$PROCESSED_RESEARCH" "$RESEARCH_KEY" "$repo" "research" "$RESEARCH_NUM" "$project_slug" || continue
         fi
         if ! should_process_item "$repo" "research" "$RESEARCH_NUM" "$project_slug"; then
             continue
@@ -633,13 +658,22 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
             # Skip if already seen by auto-triage
             if grep -qF "$AT_KEY" "$PROCESSED_AUTO_TRIAGE"; then
-                continue
+                check_reopened_item "$PROCESSED_AUTO_TRIAGE" "$AT_KEY" "$repo" "issue" "$AT_NUM" "$project_slug" || continue
             fi
 
             # Skip if already processed by any other pipeline path
             if grep -qF "${repo}#${AT_NUM}" "$PROCESSED_ISSUES" "$PROCESSED_WORK" "$PROCESSED_RESEARCH" "$PROCESSED_WRITE_TESTS" 2>/dev/null; then
-                echo "$AT_KEY" >> "$PROCESSED_AUTO_TRIAGE"
-                continue
+                if reset_completed_item "$repo" "issue" "$AT_NUM" "$project_slug"; then
+                    # Reopened: remove from all processed files
+                    remove_from_processed_file "$PROCESSED_ISSUES" "${repo}#${AT_NUM}"
+                    remove_from_processed_file "$PROCESSED_WORK" "${repo}#${AT_NUM}"
+                    remove_from_processed_file "$PROCESSED_RESEARCH" "${repo}#${AT_NUM}"
+                    remove_from_processed_file "$PROCESSED_WRITE_TESTS" "${repo}#${AT_NUM}"
+                    log_info "Reopened item detected: ${repo}#${AT_NUM} — cleared from all processed files"
+                else
+                    echo "$AT_KEY" >> "$PROCESSED_AUTO_TRIAGE"
+                    continue
+                fi
             fi
 
             # Skip if issue has ANY Zapat label (already managed)
