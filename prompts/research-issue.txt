@@ -116,6 +116,15 @@ For each actionable recommendation, specify:
    gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "YOUR_RESEARCH_REPORT"
    ```
 
+   After creating all sub-issues and posting the research report, post a
+   machine-readable tracking comment for automated program tracking:
+   ```
+   gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "<!-- zapat-sub-issues: X,Y,Z -->"
+   ```
+   Replace X,Y,Z with the comma-separated issue numbers of ALL sub-issues
+   you created. This MUST be a separate comment (not inside the research
+   report) so the pipeline can discover sub-issues programmatically.
+
 6. **Close the original issue** if it has been fully superseded by more specific follow-up issues:
    ```
    gh issue close {{ISSUE_NUMBER}} --repo {{REPO}} --comment "Superseded by follow-up issues: #X, #Y, #Z"

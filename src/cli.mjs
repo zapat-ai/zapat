@@ -9,6 +9,7 @@ import { registerProjectsCommand } from './commands/projects.mjs';
 import { registerInitCommand } from './commands/init.mjs';
 import { registerStartCommand } from './commands/start.mjs';
 import { registerStopCommand } from './commands/stop.mjs';
+import { registerProgramCommand } from './commands/program.mjs';
 
 export function createCli() {
   const program = new Command();
@@ -29,6 +30,7 @@ export function createCli() {
   registerRiskCommand(program);
   registerStartCommand(program);
   registerStopCommand(program);
+  registerProgramCommand(program);
 
   return program;
 }
