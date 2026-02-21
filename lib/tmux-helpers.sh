@@ -60,7 +60,12 @@ launch_agent_session() {
     local workdir="$2"
     local prompt_file="$3"
     local extra_env="${4:-}"
-    local model="${5:-${CLAUDE_MODEL:-claude-opus-4-6}}"
+    # Provider-aware model default: use the active provider's model env var
+    local _default_model="${CLAUDE_MODEL:-claude-opus-4-6}"
+    if [[ "${AGENT_PROVIDER:-claude}" == "codex" ]]; then
+        _default_model="${CODEX_MODEL:-codex}"
+    fi
+    local model="${5:-$_default_model}"
 
     # Validate inputs
     if [[ ! -d "$workdir" ]]; then
@@ -382,15 +387,23 @@ monitor_session() {
             return 2
         fi
 
-        # Idle detection: Claude finished and is sitting at the ❯ prompt.
-        # The idle pattern is: cost line (✻) followed by separator (───) and
-        # the input prompt (❯), with no active spinner visible.
-        # IMPORTANT: We also require the cost line (✻) to be present, which
-        # proves Claude actually processed a prompt. Without it, the session
+        # Idle detection: agent finished and is sitting at the input prompt
+        # with no active spinner visible.
+        # Uses provider-sourced patterns when available; falls back to Claude defaults.
+        # IMPORTANT: We also require the cost line (✻) to be present (Claude) to
+        # prove the agent actually processed a prompt. Without it, the session
         # is still in its initial startup state and hasn't done any work yet.
+        local _idle_pat _spinner_pat
+        if declare -f provider_get_idle_pattern &>/dev/null; then
+            _idle_pat="$(provider_get_idle_pattern)"
+            _spinner_pat="$(provider_get_spinner_pattern)"
+        else
+            _idle_pat="^❯"
+            _spinner_pat="(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Working|Thinking)"
+        fi
         local tail_content
         tail_content=$(tmux capture-pane -t "${TMUX_SESSION}:${window}" -p -S -5 2>/dev/null || echo "")
-        if echo "$tail_content" | grep -qE "^❯" && echo "$tail_content" | grep -qE "✻" && ! echo "$tail_content" | grep -qE "(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Working|Thinking)"; then
+        if echo "$tail_content" | grep -qE "$_idle_pat" && echo "$tail_content" | grep -qE "✻" && ! echo "$tail_content" | grep -qE "$_spinner_pat"; then
             idle_checks=$((idle_checks + 1))
             if [[ $idle_checks -ge $idle_threshold ]]; then
                 log_info "Session '$window' idle at prompt for $idle_checks checks — killing window"
