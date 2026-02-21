@@ -152,3 +152,165 @@ teardown() {
     run jq -r '.last_error' "$state_file"
     assert_output "null"
 }
+
+# --- reset_completed_item tests ---
+
+@test "reset_completed_item resets completed → pending and clears fields" {
+    local state_file
+    state_file=$(create_item_state "owner/repo" "issue" "60" "pending" "default")
+    update_item_state "$state_file" "running"
+    update_item_state "$state_file" "failed" "err"
+    update_item_state "$state_file" "running"
+    update_item_state "$state_file" "completed"
+
+    run jq -r '.status' "$state_file"
+    assert_output "completed"
+
+    run reset_completed_item "owner/repo" "issue" "60" "default"
+    assert_success
+
+    run jq -r '.status' "$state_file"
+    assert_output "pending"
+
+    run jq -r '.attempts' "$state_file"
+    assert_output "0"
+
+    run jq -r '.last_error' "$state_file"
+    assert_output "null"
+
+    run jq -r '.next_retry_after' "$state_file"
+    assert_output "null"
+}
+
+@test "reset_completed_item resets abandoned → pending" {
+    local state_file
+    state_file=$(create_item_state "owner/repo" "issue" "61" "pending" "default")
+    update_item_state "$state_file" "running"
+    update_item_state "$state_file" "failed" "err1"
+    update_item_state "$state_file" "running"
+    update_item_state "$state_file" "failed" "err2"
+    update_item_state "$state_file" "running"
+    update_item_state "$state_file" "failed" "err3"
+
+    run jq -r '.status' "$state_file"
+    assert_output "abandoned"
+
+    run reset_completed_item "owner/repo" "issue" "61" "default"
+    assert_success
+
+    run jq -r '.status' "$state_file"
+    assert_output "pending"
+}
+
+@test "reset_completed_item no-op for pending items" {
+    create_item_state "owner/repo" "issue" "62" "pending" "default"
+
+    run reset_completed_item "owner/repo" "issue" "62" "default"
+    assert_failure
+}
+
+@test "reset_completed_item no-op for running items" {
+    local state_file
+    state_file=$(create_item_state "owner/repo" "issue" "63" "pending" "default")
+    update_item_state "$state_file" "running"
+
+    run reset_completed_item "owner/repo" "issue" "63" "default"
+    assert_failure
+}
+
+@test "reset_completed_item no-op for non-existent state file" {
+    run reset_completed_item "owner/repo" "issue" "999" "default"
+    assert_failure
+}
+
+@test "reset_completed_item preserves project/repo/type fields" {
+    local state_file
+    state_file=$(create_item_state "org/myrepo" "pr" "70" "pending" "my-project")
+    update_item_state "$state_file" "completed"
+
+    reset_completed_item "org/myrepo" "pr" "70" "my-project"
+
+    run jq -r '.project' "$state_file"
+    assert_output "my-project"
+
+    run jq -r '.repo' "$state_file"
+    assert_output "org/myrepo"
+
+    run jq -r '.type' "$state_file"
+    assert_output "pr"
+
+    run jq -r '.number' "$state_file"
+    assert_output "70"
+}
+
+@test "should_process_item returns 0 after reset_completed_item" {
+    local state_file
+    state_file=$(create_item_state "owner/repo" "issue" "71" "pending" "default")
+    update_item_state "$state_file" "completed"
+
+    run should_process_item "owner/repo" "issue" "71" "default"
+    assert_failure
+
+    reset_completed_item "owner/repo" "issue" "71" "default"
+
+    run should_process_item "owner/repo" "issue" "71" "default"
+    assert_success
+}
+
+# --- remove_from_processed_file tests ---
+
+@test "remove_from_processed_file removes exact key and leaves others" {
+    # Source poll-github helpers (they depend on common.sh + item-state.sh already loaded)
+    local pfile="$BATS_TEST_TMPDIR/processed.txt"
+    printf '%s\n' "owner/repo#1" "owner/repo#10" "owner/repo#2" > "$pfile"
+
+    # Inline the function for testing (it lives in poll-github.sh which has side effects)
+    remove_from_processed_file() {
+        local file="$1" key="$2"
+        [[ -f "$file" ]] || return 0
+        local tmp="${file}.tmp"
+        grep -vxF "$key" "$file" > "$tmp" 2>/dev/null || true
+        mv "$tmp" "$file"
+    }
+
+    remove_from_processed_file "$pfile" "owner/repo#1"
+
+    # owner/repo#10 should still be present (whole-line match, not substring)
+    run cat "$pfile"
+    refute_line "owner/repo#1"
+    assert_line "owner/repo#10"
+    assert_line "owner/repo#2"
+}
+
+@test "remove_from_processed_file handles missing file gracefully" {
+    remove_from_processed_file() {
+        local file="$1" key="$2"
+        [[ -f "$file" ]] || return 0
+        local tmp="${file}.tmp"
+        grep -vxF "$key" "$file" > "$tmp" 2>/dev/null || true
+        mv "$tmp" "$file"
+    }
+
+    run remove_from_processed_file "$BATS_TEST_TMPDIR/nonexistent.txt" "some-key"
+    assert_success
+}
+
+@test "remove_from_processed_file handles last-line removal (file becomes empty)" {
+    local pfile="$BATS_TEST_TMPDIR/processed-single.txt"
+    echo "owner/repo#5" > "$pfile"
+
+    remove_from_processed_file() {
+        local file="$1" key="$2"
+        [[ -f "$file" ]] || return 0
+        local tmp="${file}.tmp"
+        grep -vxF "$key" "$file" > "$tmp" 2>/dev/null || true
+        mv "$tmp" "$file"
+    }
+
+    remove_from_processed_file "$pfile" "owner/repo#5"
+
+    # File should exist but be empty
+    [ -f "$pfile" ]
+    run cat "$pfile"
+    assert_output ""
+}
