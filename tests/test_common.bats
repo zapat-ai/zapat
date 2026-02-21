@@ -9,6 +9,9 @@ setup() {
     export AUTOMATION_DIR="$BATS_TEST_TMPDIR/zapat"
     mkdir -p "$AUTOMATION_DIR/state"
     mkdir -p "$AUTOMATION_DIR/logs"
+    mkdir -p "$AUTOMATION_DIR/config"
+    # Create repos.conf so project_config_dir uses legacy fallback (config/ not config/default/)
+    touch "$AUTOMATION_DIR/config/repos.conf"
 
     source "$BATS_TEST_DIRNAME/../lib/common.sh"
 }
@@ -96,4 +99,108 @@ teardown() {
 
     # Clean up
     release_lock "$lock_file"
+}
+
+# --- read_agents_conf Tests ---
+
+@test "read_agents_conf loads core roles from conf file" {
+    mkdir -p "$AUTOMATION_DIR/config"
+    cat > "$AUTOMATION_DIR/config/agents.conf" <<'EOF'
+builder=engineer
+security=security-reviewer
+product=product-manager
+ux=ux-reviewer
+EOF
+
+    read_agents_conf ""
+    assert_equal "$BUILDER_AGENT" "engineer"
+    assert_equal "$SECURITY_AGENT" "security-reviewer"
+    assert_equal "$PRODUCT_AGENT" "product-manager"
+    assert_equal "$UX_AGENT" "ux-reviewer"
+}
+
+@test "read_agents_conf exports custom roles with uppercase names" {
+    mkdir -p "$AUTOMATION_DIR/config"
+    cat > "$AUTOMATION_DIR/config/agents.conf" <<'EOF'
+builder=engineer
+security=security-reviewer
+product=product-manager
+ux=ux-reviewer
+qa=qa-engineer
+devops=devops-engineer
+docs=technical-writer
+EOF
+
+    read_agents_conf ""
+    assert_equal "$BUILDER_AGENT" "engineer"
+    # Custom roles are exported as AGENT_<UPPER_ROLE>
+    assert_equal "${AGENT_QA:-}" "qa-engineer"
+    assert_equal "${AGENT_DEVOPS:-}" "devops-engineer"
+    assert_equal "${AGENT_DOCS:-}" "technical-writer"
+}
+
+@test "read_agents_conf custom roles work under set -euo pipefail" {
+    mkdir -p "$AUTOMATION_DIR/config"
+    cat > "$AUTOMATION_DIR/config/agents.conf" <<'EOF'
+builder=engineer
+qa=qa-engineer
+devops=devops-engineer
+EOF
+
+    # This is the exact scenario that broke with bash 3.2 and ${role^^}.
+    # The function must not crash — verify by checking the return code
+    # and that the variables are set.
+    read_agents_conf ""
+    local rc=$?
+    assert_equal "$rc" "0"
+    assert_equal "${AGENT_QA:-}" "qa-engineer"
+    assert_equal "${AGENT_DEVOPS:-}" "devops-engineer"
+}
+
+@test "read_agents_conf applies repo-type overrides in pass 2" {
+    mkdir -p "$AUTOMATION_DIR/config"
+    cat > "$AUTOMATION_DIR/config/agents.conf" <<'EOF'
+builder=engineer
+builder.ios=ios-engineer
+builder.web=web-engineer
+EOF
+
+    read_agents_conf "" "ios"
+    assert_equal "$BUILDER_AGENT" "ios-engineer"
+}
+
+@test "read_agents_conf repo-type overrides work for custom roles" {
+    mkdir -p "$AUTOMATION_DIR/config"
+    cat > "$AUTOMATION_DIR/config/agents.conf" <<'EOF'
+builder=engineer
+qa=qa-engineer
+qa.ios=ios-qa-engineer
+EOF
+
+    read_agents_conf "" "ios"
+    assert_equal "${AGENT_QA:-}" "ios-qa-engineer"
+}
+
+@test "read_agents_conf falls back to defaults when no conf file" {
+    # Don't create a conf file
+    read_agents_conf ""
+    assert_equal "$BUILDER_AGENT" "engineer"
+    assert_equal "$SECURITY_AGENT" "security-reviewer"
+    assert_equal "$PRODUCT_AGENT" "product-manager"
+    assert_equal "$UX_AGENT" "ux-reviewer"
+}
+
+@test "read_agents_conf skips comments and blank lines" {
+    mkdir -p "$AUTOMATION_DIR/config"
+    cat > "$AUTOMATION_DIR/config/agents.conf" <<'EOF'
+# This is a comment
+builder=engineer
+
+# Another comment
+security=security-reviewer
+EOF
+
+    read_agents_conf ""
+    assert_equal "$BUILDER_AGENT" "engineer"
+    assert_equal "$SECURITY_AGENT" "security-reviewer"
 }

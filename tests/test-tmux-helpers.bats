@@ -534,3 +534,62 @@ _load_fatal_pattern() {
     # 'panic:' requires the colon, so 'panic button' won't match
     ! echo "Don't hit the panic button" | grep -qE "$PANE_PATTERN_FATAL"
 }
+
+# --- Idle detection tests ---
+# The idle detection in monitor_session must require BOTH:
+# 1. The ❯ prompt (Claude is at input)
+# 2. The cost line ✻ (proves Claude processed at least one prompt)
+# 3. No active spinner
+# Without the cost line check, freshly launched sessions at the initial
+# ❯ prompt would be killed before they start working.
+
+_idle_detected() {
+    local content="$1"
+    echo "$content" | grep -qE "^❯" && \
+    echo "$content" | grep -qE "✻" && \
+    ! echo "$content" | grep -qE "(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Working|Thinking)"
+}
+
+@test "idle detection triggers when cost line and prompt are present" {
+    local content="✻ Total cost: \$0.05
+───────────────────
+❯ "
+    _idle_detected "$content"
+}
+
+@test "idle detection does NOT trigger on initial prompt without cost line" {
+    # This is the exact scenario that caused the false positive:
+    # Claude just started, shows ❯ but has done no work yet
+    local content="
+   Claude Code v2.1.50
+
+❯ "
+    ! _idle_detected "$content"
+}
+
+@test "idle detection does NOT trigger when spinner is active" {
+    local content="✻ Total cost: \$0.05
+⠋ Working on task...
+❯ "
+    ! _idle_detected "$content"
+}
+
+@test "idle detection does NOT trigger with Thinking indicator" {
+    local content="✻ Total cost: \$0.05
+Thinking...
+❯ "
+    ! _idle_detected "$content"
+}
+
+@test "idle detection does NOT trigger without prompt" {
+    local content="✻ Total cost: \$0.05
+Some output here"
+    ! _idle_detected "$content"
+}
+
+@test "idle detection does NOT trigger on bypass permissions startup" {
+    local content="
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+❯ "
+    ! _idle_detected "$content"
+}
