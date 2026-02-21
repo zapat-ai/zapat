@@ -30,6 +30,7 @@ EOF
 
 teardown() {
     unset PROVIDER
+    unset AGENT_PROVIDER
     unset CODEX_MODEL
     rm -rf "$BATS_TEST_TMPDIR/zapat"
     rm -rf "$BATS_TEST_TMPDIR/prompts"
@@ -343,4 +344,25 @@ EOF
     assert_output --partial "Line 2"
     assert_output --partial "Line 3"
     refute_output --partial "Codex line 1"
+}
+
+# --- AGENT_PROVIDER env var (canonical, set by lib/provider.sh) ---
+
+@test "AGENT_PROVIDER=codex activates Codex blocks" {
+    export AGENT_PROVIDER=codex
+    printf '{{#IF_CLAUDE}}claude{{/IF_CLAUDE}}{{#IF_CODEX}}codex{{/IF_CODEX}}' > "$TEMPLATE"
+    run substitute_prompt "$TEMPLATE"
+    assert_success
+    assert_output --partial "codex"
+    refute_output --partial "claude"
+}
+
+@test "AGENT_PROVIDER takes precedence over PROVIDER" {
+    export AGENT_PROVIDER=codex
+    export PROVIDER=claude
+    printf '{{#IF_CLAUDE}}claude{{/IF_CLAUDE}}{{#IF_CODEX}}codex{{/IF_CODEX}}' > "$TEMPLATE"
+    run substitute_prompt "$TEMPLATE"
+    assert_success
+    assert_output --partial "codex"
+    refute_output --partial "claude"
 }

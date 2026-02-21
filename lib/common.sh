@@ -722,7 +722,9 @@ $(cat "$footer_file")"
     fi
 
     # Determine provider (claude or codex)
-    local _provider="${PROVIDER:-claude}"
+    # AGENT_PROVIDER is canonical (set by lib/provider.sh + poll-github.sh routing)
+    # PROVIDER accepted as alias for backward compatibility
+    local _provider="${AGENT_PROVIDER:-${PROVIDER:-claude}}"
 
     # For Codex provider, use Codex model name instead of Claude's
     if [[ "$_provider" == "codex" ]]; then
