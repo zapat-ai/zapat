@@ -269,6 +269,39 @@ EOF
     echo "429 error" | grep -qE "$pattern"
 }
 
+# --- Path traversal prevention tests ---
+
+@test "provider.sh rejects AGENT_PROVIDER with path traversal" {
+    export AGENT_PROVIDER="../../etc/malicious"
+    export _PROVIDER_DIR="$TEST_DIR/lib/providers"
+    run source "$TEST_DIR/lib/provider.sh"
+    assert_failure
+    assert_output --partial "Invalid AGENT_PROVIDER"
+}
+
+@test "provider.sh rejects AGENT_PROVIDER with slashes" {
+    export AGENT_PROVIDER="foo/bar"
+    export _PROVIDER_DIR="$TEST_DIR/lib/providers"
+    run source "$TEST_DIR/lib/provider.sh"
+    assert_failure
+    assert_output --partial "Invalid AGENT_PROVIDER"
+}
+
+@test "provider.sh rejects AGENT_PROVIDER with dots" {
+    export AGENT_PROVIDER="claude.sh"
+    export _PROVIDER_DIR="$TEST_DIR/lib/providers"
+    run source "$TEST_DIR/lib/provider.sh"
+    assert_failure
+    assert_output --partial "Invalid AGENT_PROVIDER"
+}
+
+@test "provider.sh accepts valid AGENT_PROVIDER names" {
+    export AGENT_PROVIDER=claude
+    export _PROVIDER_DIR="$TEST_DIR/lib/providers"
+    source "$TEST_DIR/lib/provider.sh"
+    assert_equal "$AGENT_PROVIDER" "claude"
+}
+
 # --- Double-source guard test ---
 
 @test "provider.sh can be sourced twice without error" {

@@ -42,6 +42,12 @@ _isolate_credentials() {
 }
 
 # --- Load Provider Implementation ---
+# Validate AGENT_PROVIDER to prevent path traversal (e.g., ../../etc/malicious)
+if [[ ! "$AGENT_PROVIDER" =~ ^[a-z0-9_-]+$ ]]; then
+    echo "[ERROR] Invalid AGENT_PROVIDER '${AGENT_PROVIDER}'. Must contain only lowercase letters, digits, hyphens, and underscores." >&2
+    return 1
+fi
+
 _provider_file="${_PROVIDER_DIR}/${AGENT_PROVIDER}.sh"
 
 if [[ ! -f "$_provider_file" ]]; then
