@@ -5,16 +5,23 @@
 
 TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
-# Patterns for detecting stuck panes
-# Permission pattern uses exact Claude CLI prompt phrases to avoid false positives
-# from code review output (IAM policies, etc.).
-# Note: PANE_PATTERN_BYPASS removed — defaultMode:bypassPermissions in settings.json
-# means no startup bypass prompt appears. "shift+tab to cycle" now appears in every
-# running session's status bar and must NOT be used as a match pattern.
-PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
-PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
-PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|Do you want to (create|make|run|write|edit)|wants to use the .* tool|approve this action|Waiting for team lead approval)"
-PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
+# Load provider abstraction for pattern detection and launch commands.
+# If provider.sh is available, use provider-sourced patterns; otherwise fall back
+# to hardcoded Claude defaults for backward compatibility.
+_TMUX_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_TMUX_HELPERS_DIR}/provider.sh" ]]; then
+    source "${_TMUX_HELPERS_DIR}/provider.sh"
+    PANE_PATTERN_ACCOUNT_LIMIT="$(provider_get_account_limit_pattern)"
+    PANE_PATTERN_RATE_LIMIT="$(provider_get_rate_limit_pattern)"
+    PANE_PATTERN_PERMISSION="$(provider_get_permission_pattern)"
+    PANE_PATTERN_FATAL="$(provider_get_fatal_pattern)"
+else
+    # Hardcoded fallback (Claude defaults) — kept for backward compatibility
+    PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
+    PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
+    PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|Do you want to (create|make|run|write|edit)|wants to use the .* tool|approve this action|Waiting for team lead approval)"
+    PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
+fi
 
 # Wait for specific content to appear in a tmux pane
 # Usage: wait_for_tmux_content "window-name" "pattern" [timeout_seconds]
@@ -40,10 +47,15 @@ wait_for_tmux_content() {
     return 1
 }
 
-# Launch a Claude session in a tmux window with readiness detection
-# Usage: launch_claude_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars] [agent_model]
+# Launch an agent session in a tmux window with readiness detection.
+# Uses provider_get_launch_cmd() to build the CLI invocation.
+# Usage: launch_agent_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars] [agent_model]
 # Returns: 0 if session launched and prompt submitted, 1 on failure
-launch_claude_session() {
+#
+# Backward-compatible alias:
+launch_claude_session() { launch_agent_session "$@"; }
+
+launch_agent_session() {
     local window="$1"
     local workdir="$2"
     local prompt_file="$3"
@@ -64,16 +76,21 @@ launch_claude_session() {
     # Kill any existing window with the same name
     tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
 
-    # Build the command
+    # Build the command using provider abstraction
+    local launch_cmd
+    if declare -f provider_get_launch_cmd &>/dev/null; then
+        launch_cmd="$(provider_get_launch_cmd "$model")"
+    else
+        # Fallback if provider not loaded
+        launch_cmd="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --model '${model}' --dangerously-skip-permissions --permission-mode bypassPermissions"
+    fi
+
     local cmd="cd '$workdir' && "
     cmd+="unset CLAUDECODE && "
-    cmd+="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 "
     if [[ -n "$extra_env" ]]; then
         cmd+="$extra_env "
     fi
-    cmd+="claude --model '${model}' "
-    cmd+="--dangerously-skip-permissions "
-    cmd+="--permission-mode bypassPermissions; "
+    cmd+="${launch_cmd}; "
     cmd+="exit"
 
     # Create new tmux window
@@ -149,7 +166,7 @@ launch_claude_session() {
     sleep 2
     tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
 
-    log_info "Prompt submitted to Claude session in window '$window'"
+    log_info "Prompt submitted to ${AGENT_PROVIDER:-claude} session in window '$window'"
     return 0
 }
 
