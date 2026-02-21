@@ -273,7 +273,7 @@ scan_mentions() {
 
         # Determine if this is a PR or issue
         local is_pr=false
-        if gh pr view "$item_number" --repo "$repo" --json number &>/dev/null; then
+        if gh pr view "$item_number" --repo "$repo" --json number,labels &>/dev/null; then
             is_pr=true
         fi
 
@@ -290,15 +290,29 @@ scan_mentions() {
 
         local cur_project="${CURRENT_PROJECT:-default}"
         if [[ "$is_pr" == "true" ]]; then
-            "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
+            local pr_labels
+            pr_labels=$(gh pr view "$item_number" --repo "$repo" --json labels \
+                --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+
+            if echo "$pr_labels" | grep -q "zapat-rework"; then
+                "$SCRIPT_DIR/triggers/on-rework-pr.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
+            elif echo "$pr_labels" | grep -q "zapat-testing"; then
+                "$SCRIPT_DIR/triggers/on-test-pr.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
+            else
+                "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
+            fi
             TOTAL_PRS=$((TOTAL_PRS + 1))
         else
-            # Check if issue has agent-work label
+            # Check issue labels for routing — specialized labels before generic
             local issue_labels
             issue_labels=$(gh issue view "$item_number" --repo "$repo" --json labels \
                 --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
 
-            if echo "$issue_labels" | grep -q "agent-work"; then
+            if echo "$issue_labels" | grep -q "agent-research"; then
+                "$SCRIPT_DIR/triggers/on-research-issue.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
+            elif echo "$issue_labels" | grep -q "agent-write-tests"; then
+                "$SCRIPT_DIR/triggers/on-write-tests.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
+            elif echo "$issue_labels" | grep -q "agent-work"; then
                 "$SCRIPT_DIR/triggers/on-work-issue.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
             else
                 "$SCRIPT_DIR/triggers/on-new-issue.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
