@@ -20,6 +20,7 @@
 
 ## Workflow
 
+{{#IF_CLAUDE}}
 If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. Only skip team creation if the feedback is confirmed style-nits-only with no blocking issues.
 
 1. **Analyze Feedback**:
@@ -42,6 +43,27 @@ If you are spawning a team, your **FIRST action** must be to call the `TeamCreat
    - All send their assessment to you (the lead).
 
 5. **Shut down the team** when done (skip if working solo).
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+You are working solo. Address all review feedback sequentially.
+
+1. **Analyze Feedback**:
+   Read all review feedback carefully. Classify each piece using the Feedback Triage Guide below.
+
+2. **Phase 1 — Blocking Issues (must fix):**
+   - Address ALL blocking issues first — things marked as "blocking", "must fix", "required", or that point out bugs, security issues, or correctness problems.
+   - Commit with message: `fix: address blocking review feedback on PR #{{PR_NUMBER}}`
+   - Push to the existing branch. Do NOT force-push or rebase — add commits on top.
+
+3. **Phase 2 — Suggestions & Improvements (should fix):**
+   - Address ALL remaining feedback — suggestions, improvements, refactoring ideas, naming changes, documentation additions, test suggestions, and "nice to have" items.
+   - Treat suggestions as actionable work, not optional. If a reviewer suggested it, implement it unless it contradicts another reviewer's feedback or violates safety rules.
+   - Commit SEPARATELY from blocking fixes with message: `refactor: implement review suggestions on PR #{{PR_NUMBER}}`
+
+4. **Phase 3 — Self-Review:**
+   - Verify all security-related feedback was correctly addressed and no new issues were introduced.
+   - Verify the original acceptance criteria are still met and no regressions were introduced.
+{{/IF_CODEX}}
 
 ## Feedback Triage Guide
 

@@ -8,4 +8,9 @@ Consult {{REPO_MAP}} below for the list of repositories and their types.
 {{COMPLIANCE_RULES}}
 
 ## Session Lifecycle
+{{#IF_CLAUDE}}
 When you have completed ALL steps in this task (including shutting down teammates if any), you MUST run `/exit` as your final action. Do not wait for further input — the pipeline monitors this session and will time it out if you idle. Running `/exit` ensures clean resource reclamation.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+When you have completed ALL steps in this task, simply end your response. Do not wait for further input — the pipeline monitors this session. No explicit exit command is needed.
+{{/IF_CODEX}}

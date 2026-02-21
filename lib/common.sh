@@ -721,6 +721,14 @@ $(cat "$footer_file")"
         esac
     fi
 
+    # Determine provider (claude or codex)
+    local _provider="${PROVIDER:-claude}"
+
+    # For Codex provider, use Codex model name instead of Claude's
+    if [[ "$_provider" == "codex" ]]; then
+        _subagent_model="${CODEX_MODEL:-o3}"
+    fi
+
     # Cap PR_DIFF at configurable limit (~40,000 characters ≈ ~10,000 tokens)
     local max_diff_chars="${MAX_DIFF_CHARS:-40000}"
     [[ "$max_diff_chars" =~ ^[0-9]+$ ]] || max_diff_chars=40000
@@ -760,6 +768,30 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
         done
     fi
 
+    # PASS 1.5: Process provider-conditional blocks
+    # Strip blocks for the inactive provider, unwrap blocks for the active provider
+    if [[ "$_provider" == "claude" ]]; then
+        # Remove {{#IF_CODEX}}...{{/IF_CODEX}} blocks (including tags and content)
+        while [[ "$content" == *'{{#IF_CODEX}}'* ]]; do
+            local before="${content%%\{\{#IF_CODEX\}\}*}"
+            local after="${content#*\{\{/IF_CODEX\}\}}"
+            content="${before}${after}"
+        done
+        # Unwrap {{#IF_CLAUDE}}...{{/IF_CLAUDE}} blocks (remove tags, keep content)
+        content="${content//\{\{#IF_CLAUDE\}\}/}"
+        content="${content//\{\{\/IF_CLAUDE\}\}/}"
+    elif [[ "$_provider" == "codex" ]]; then
+        # Remove {{#IF_CLAUDE}}...{{/IF_CLAUDE}} blocks (including tags and content)
+        while [[ "$content" == *'{{#IF_CLAUDE}}'* ]]; do
+            local before="${content%%\{\{#IF_CLAUDE\}\}*}"
+            local after="${content#*\{\{/IF_CLAUDE\}\}}"
+            content="${before}${after}"
+        done
+        # Unwrap {{#IF_CODEX}}...{{/IF_CODEX}} blocks (remove tags, keep content)
+        content="${content//\{\{#IF_CODEX\}\}/}"
+        content="${content//\{\{\/IF_CODEX\}\}/}"
+    fi
+
     # PASS 2: Auto-inject standard variables (resolves all remaining {{PLACEHOLDER}} tokens)
     # Extract REPO_TYPE from explicit args for repo-type-aware agent selection
     local _repo_type=""
@@ -790,6 +822,7 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
     content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
     content="${content//\{\{SUBAGENT_MODEL\}\}/${_subagent_model}}"
     content="${content//\{\{REPO_TYPE\}\}/${_repo_type}}"
+    content="${content//\{\{PROVIDER\}\}/${_provider}}"
 
     echo "$content"
 }
