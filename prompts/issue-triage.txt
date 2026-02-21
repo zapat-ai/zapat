@@ -78,15 +78,15 @@ Any blocking issues, prerequisites, or related work.
 Additional labels to add beyond what's already applied.
 
 ### Auto-Implementation Decision
-Based on the TEAM's collective analysis, decide if this issue should be automatically implemented by an agent team.
+Based on the analysis above, decide if this issue should be automatically implemented.
 
 **Add `agent-work` label** if ALL of these are true:
 - Acceptance criteria are clear enough for an engineer to implement
 - No external dependencies or API key provisioning needed (agent can't provision credentials)
 - No database schema migrations required (agent can't run migrations)
-- The team agrees the requirements are unambiguous
+- The requirements are unambiguous
 
-Complexity is NOT a blocker. Small, Medium, and Large issues should all be auto-implemented. The implementation team has 5 members (builder, security, UX, clinical, PM) and a human reviews the PR before merge. The worst outcome is a PR that needs rework.
+Complexity is NOT a blocker. Small, Medium, and Large issues should all be auto-implemented. The pipeline will assign an appropriately-sized team and a human reviews the PR before merge. The worst outcome is a PR that needs rework.
 
 **Do NOT add `agent-work`** only if:
 - Missing acceptance criteria (agent won't know what to build)
