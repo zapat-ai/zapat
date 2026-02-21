@@ -8,11 +8,12 @@ ITEM_STATE_DIR="${AUTOMATION_DIR}/state/items"
 mkdir -p "$ITEM_STATE_DIR"
 
 # Create a new item state file
-# Usage: create_item_state "owner/repo" "issue" "123" "pending" ["project-slug"]
+# Usage: create_item_state "owner/repo" "issue" "123" "pending" ["project-slug"] ["parent-issue-number"]
 # Returns: path to state file
 create_item_state() {
     local repo="$1" type="$2" number="$3" initial_status="${4:-pending}"
     local project="${5:-${CURRENT_PROJECT:-default}}"
+    local parent_issue="${6:-}"
     local key="${project}--${repo//\//-}_${type}_${number}"
     local state_file="$ITEM_STATE_DIR/${key}.json"
 
@@ -29,6 +30,11 @@ create_item_state() {
     local now
     now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
+    local parent_json="null"
+    if [[ -n "$parent_issue" ]]; then
+        parent_json="$parent_issue"
+    fi
+
     cat > "$state_file" <<ITEMEOF
 {
   "project": "$project",
@@ -40,7 +46,8 @@ create_item_state() {
   "updated_at": "$now",
   "attempts": 0,
   "last_error": null,
-  "next_retry_after": null
+  "next_retry_after": null,
+  "parent_issue": $parent_json
 }
 ITEMEOF
 

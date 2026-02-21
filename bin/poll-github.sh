@@ -325,6 +325,42 @@ scan_mentions() {
     done
 }
 
+# --- Program Status Auto-Post ---
+# After significant events on sub-issues/PRs, post updated program status to parent.
+# Throttled: max 1 update per 30 min per parent issue.
+auto_post_program_status() {
+    [[ "${AUTO_PROGRAM_UPDATES:-false}" == "true" ]] || return 0
+
+    local repo="$1" number="$2" event_type="$3"
+    local throttle_dir="$SCRIPT_DIR/state/program-throttle"
+    mkdir -p "$throttle_dir"
+
+    # Find parent issue from state file
+    local parent_number=""
+    for state_file in "$ITEM_STATE_DIR"/*"_${number}".json; do
+        [[ -f "$state_file" ]] || continue
+        parent_number=$(jq -r '.parent_issue // empty' "$state_file" 2>/dev/null)
+        [[ -n "$parent_number" ]] && break
+    done
+    [[ -z "$parent_number" ]] && return 0
+
+    # Throttle check (30 min)
+    local throttle_key="${repo//\//-}_${parent_number}"
+    local throttle_file="$throttle_dir/$throttle_key"
+    if [[ -f "$throttle_file" ]]; then
+        local last_post now_epoch
+        last_post=$(cat "$throttle_file" 2>/dev/null || echo "0")
+        now_epoch=$(date +%s)
+        (( now_epoch - last_post < 1800 )) && return 0
+    fi
+
+    # Post update
+    if "$SCRIPT_DIR/bin/zapat" program "$parent_number" --repo "$repo" --post 2>/dev/null; then
+        date +%s > "$throttle_file"
+        log_info "Auto-posted program status for parent #${parent_number} (triggered by #${number} ${event_type})"
+    fi
+}
+
 # --- Process Repos (per project) ---
 TOTAL_PRS=0
 TOTAL_ISSUES=0
