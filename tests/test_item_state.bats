@@ -314,3 +314,78 @@ teardown() {
     run cat "$pfile"
     assert_output ""
 }
+
+# --- rework cycle counter tests ---
+
+@test "increment_rework_cycles increments from 0 to 1" {
+    local state_file
+    state_file=$(create_item_state "owner/repo" "rework" "100" "pending" "default")
+
+    run increment_rework_cycles "owner/repo" "rework" "100" "default"
+    assert_success
+    assert_output "1"
+
+    run jq -r '.rework_cycles' "$state_file"
+    assert_output "1"
+}
+
+@test "increment_rework_cycles increments across multiple calls" {
+    local state_file
+    state_file=$(create_item_state "owner/repo" "rework" "101" "pending" "default")
+
+    increment_rework_cycles "owner/repo" "rework" "101" "default"
+    increment_rework_cycles "owner/repo" "rework" "101" "default"
+    run increment_rework_cycles "owner/repo" "rework" "101" "default"
+    assert_success
+    assert_output "3"
+
+    run jq -r '.rework_cycles' "$state_file"
+    assert_output "3"
+}
+
+@test "get_rework_cycles returns 0 for new item" {
+    create_item_state "owner/repo" "rework" "102" "pending" "default"
+
+    run get_rework_cycles "owner/repo" "rework" "102" "default"
+    assert_success
+    assert_output "0"
+}
+
+@test "get_rework_cycles returns current count after increments" {
+    create_item_state "owner/repo" "rework" "103" "pending" "default"
+
+    increment_rework_cycles "owner/repo" "rework" "103" "default"
+    increment_rework_cycles "owner/repo" "rework" "103" "default"
+
+    run get_rework_cycles "owner/repo" "rework" "103" "default"
+    assert_success
+    assert_output "2"
+}
+
+@test "get_rework_cycles returns 0 for non-existent state file" {
+    run get_rework_cycles "owner/repo" "rework" "999" "default"
+    assert_success
+    assert_output "0"
+}
+
+@test "increment_rework_cycles fails for non-existent state file" {
+    run increment_rework_cycles "owner/repo" "rework" "999" "default"
+    assert_failure
+    assert_output "0"
+}
+
+@test "rework_cycles persists across state updates" {
+    local state_file
+    state_file=$(create_item_state "owner/repo" "rework" "104" "pending" "default")
+
+    increment_rework_cycles "owner/repo" "rework" "104" "default"
+    increment_rework_cycles "owner/repo" "rework" "104" "default"
+
+    # Update state to running, then completed
+    update_item_state "$state_file" "running"
+    update_item_state "$state_file" "completed"
+
+    # Cycle counter should persist
+    run jq -r '.rework_cycles' "$state_file"
+    assert_output "2"
+}

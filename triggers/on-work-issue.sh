@@ -209,9 +209,10 @@ PR_URL=$(gh pr list --repo "$REPO" --head "$BRANCH_NAME" --json url --jq '.[0].u
 if [[ -n "$PR_URL" ]]; then
     PR_NUM_CREATED=$(gh pr list --repo "$REPO" --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null || echo "")
     if [[ -n "$PR_NUM_CREATED" ]]; then
+        # Sequential flow: only add zapat-testing. Review will be triggered after tests pass (by on-test-pr.sh).
         gh pr edit "$PR_NUM_CREATED" --repo "$REPO" \
-            --add-label "zapat-testing" --add-label "zapat-review" 2>/dev/null || log_warn "Failed to add labels to PR #${PR_NUM_CREATED}"
-        log_info "Added zapat-testing and zapat-review labels to PR #${PR_NUM_CREATED} for automated testing and review"
+            --add-label "zapat-testing" 2>/dev/null || log_warn "Failed to add labels to PR #${PR_NUM_CREATED}"
+        log_info "Added zapat-testing label to PR #${PR_NUM_CREATED} (review will follow after tests pass)"
     fi
 fi
 

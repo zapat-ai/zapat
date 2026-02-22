@@ -194,20 +194,40 @@ fi
 
 log_info "Agent-rework session ended for PR #${PR_NUMBER}"
 
-# --- Update Labels ---
-# Remove zapat-rework, re-add zapat-review for another review pass, add zapat-testing for automated testing
-gh pr edit "$PR_NUMBER" --repo "$REPO" \
-    --remove-label "zapat-rework" \
-    --add-label "zapat-review" \
-    --add-label "zapat-testing" 2>/dev/null || log_warn "Failed to update labels on PR #${PR_NUMBER}"
-log_info "Added zapat-review and zapat-testing labels to PR #${PR_NUMBER}"
+# --- Rework Cycle Counter ---
+MAX_REWORK_CYCLES=${MAX_REWORK_CYCLES:-3}
+REWORK_CYCLES=$(increment_rework_cycles "$REPO" "rework" "$PR_NUMBER" "$PROJECT_SLUG")
+log_info "Rework cycle ${REWORK_CYCLES}/${MAX_REWORK_CYCLES} for PR #${PR_NUMBER}"
 
-# --- Notify ---
-"$SCRIPT_DIR/bin/notify.sh" \
-    --slack \
-    --message "Agent team addressed review feedback on PR #${PR_NUMBER} (${PR_TITLE}) in ${REPO}.\nThe PR has been re-labeled with zapat-review for another review pass." \
-    --job-name "agent-rework" \
-    --status success || log_warn "Slack notification failed"
+if [[ "$REWORK_CYCLES" -ge "$MAX_REWORK_CYCLES" ]]; then
+    # Cycle limit reached — escalate to human
+    log_warn "Rework cycle limit reached (${REWORK_CYCLES}/${MAX_REWORK_CYCLES}) for PR #${PR_NUMBER}. Adding hold label."
+    gh pr edit "$PR_NUMBER" --repo "$REPO" \
+        --remove-label "zapat-rework" \
+        --add-label "hold" 2>/dev/null || log_warn "Failed to update labels on PR #${PR_NUMBER}"
+    gh pr comment "$PR_NUMBER" --repo "$REPO" \
+        --body "Rework cycle limit reached (${REWORK_CYCLES}/${MAX_REWORK_CYCLES}). Adding \`hold\` for human review.
+
+This PR has gone through ${REWORK_CYCLES} rework cycles without converging. A human should review the remaining feedback and decide how to proceed." 2>/dev/null || true
+    "$SCRIPT_DIR/bin/notify.sh" \
+        --slack \
+        --message "Rework cycle limit reached (${REWORK_CYCLES}/${MAX_REWORK_CYCLES}) on PR #${PR_NUMBER} (${PR_TITLE}) in ${REPO}.\nAdded \`hold\` label for human review.\nhttps://github.com/${REPO}/pull/${PR_NUMBER}" \
+        --job-name "agent-rework" \
+        --status warning || log_warn "Slack notification failed"
+else
+    # Under limit — proceed with sequential flow: rework → test → review
+    # Only add zapat-testing; zapat-review will be added by on-test-pr.sh after tests pass
+    gh pr edit "$PR_NUMBER" --repo "$REPO" \
+        --remove-label "zapat-rework" \
+        --add-label "zapat-testing" 2>/dev/null || log_warn "Failed to update labels on PR #${PR_NUMBER}"
+    log_info "Added zapat-testing label to PR #${PR_NUMBER} (review will follow after tests pass)"
+
+    "$SCRIPT_DIR/bin/notify.sh" \
+        --slack \
+        --message "Agent team addressed review feedback on PR #${PR_NUMBER} (${PR_TITLE}) in ${REPO} (cycle ${REWORK_CYCLES}/${MAX_REWORK_CYCLES}).\nQueued for testing; review will follow after tests pass." \
+        --job-name "agent-rework" \
+        --status success || log_warn "Slack notification failed"
+fi
 
 # --- Cleanup Worktree ---
 cd "$REPO_PATH"

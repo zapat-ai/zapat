@@ -107,11 +107,13 @@ PROCESSED_WORK="$STATE_DIR/processed-work.txt"
 PROCESSED_REWORK="$STATE_DIR/processed-rework.txt"
 PROCESSED_WRITE_TESTS="$STATE_DIR/processed-write-tests.txt"
 PROCESSED_RESEARCH="$STATE_DIR/processed-research.txt"
+PROCESSED_TESTING="$STATE_DIR/processed-testing.txt"
 PROCESSED_MENTIONS="$STATE_DIR/processed-mentions.txt"
 PROCESSED_AUTO_TRIAGE="$STATE_DIR/processed-auto-triage.txt"
+PROCESSED_AUTO_REWORK="$STATE_DIR/processed-auto-rework.txt"
 PROCESSED_REBASE="$STATE_DIR/processed-rebase.txt"
 LAST_MENTION_POLL="$STATE_DIR/last-mention-poll.txt"
-touch "$PROCESSED_PRS" "$PROCESSED_ISSUES" "$PROCESSED_WORK" "$PROCESSED_REWORK" "$PROCESSED_WRITE_TESTS" "$PROCESSED_RESEARCH" "$PROCESSED_MENTIONS" "$PROCESSED_AUTO_TRIAGE" "$PROCESSED_REBASE"
+touch "$PROCESSED_PRS" "$PROCESSED_ISSUES" "$PROCESSED_WORK" "$PROCESSED_REWORK" "$PROCESSED_WRITE_TESTS" "$PROCESSED_RESEARCH" "$PROCESSED_TESTING" "$PROCESSED_MENTIONS" "$PROCESSED_AUTO_TRIAGE" "$PROCESSED_AUTO_REWORK" "$PROCESSED_REBASE"
 
 # --- Reopened Item Helpers ---
 # Remove an exact key from a processed file (whole-line match to avoid substring hits)
@@ -597,13 +599,17 @@ while IFS=$'\t' read -r repo local_path repo_type; do
         TEST_ASSIGNEES=$(echo "$TEST_JSON" | jq ".[$i].assignees")
         TEST_KEY="${repo}#test-pr${TEST_NUM}"
 
+        # Skip if already processed (dedup file + item state)
+        if grep -qF "$TEST_KEY" "$PROCESSED_TESTING"; then
+            check_reopened_item "$PROCESSED_TESTING" "$TEST_KEY" "$repo" "test" "$TEST_NUM" "$project_slug" || continue
+        fi
         if ! should_process_item "$repo" "test" "$TEST_NUM" "$project_slug"; then
-            # No processed file for zapat-testing; check if reopened via state alone
-            reset_completed_item "$repo" "test" "$TEST_NUM" "$project_slug" || continue
+            continue
         fi
 
         if ! should_process "$TEST_LABELS" "$TEST_ASSIGNEES"; then
             log_info "Skipping zapat-testing $TEST_KEY (governance: human-only or assigned)"
+            echo "$TEST_KEY" >> "$PROCESSED_TESTING"
             continue
         fi
 
@@ -612,6 +618,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
         log_info "Processing zapat-testing: $TEST_KEY — $TEST_TITLE (project: $project_slug)"
         create_item_state "$repo" "test" "$TEST_NUM" "pending" "$project_slug" >/dev/null || true
         "$SCRIPT_DIR/triggers/on-test-pr.sh" "$repo" "$TEST_NUM" "" "$project_slug" &
+        echo "$TEST_KEY" >> "$PROCESSED_TESTING"
         TOTAL_PRS=$((TOTAL_PRS + 1))
         DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
     done
@@ -781,9 +788,16 @@ while IFS=$'\t' read -r repo local_path repo_type; do
             continue
         fi
 
+        # Dedup: skip if already auto-rework-processed this cycle
+        AUTO_REWORK_KEY="${repo}#autorework-pr${AGENT_PR_NUM}"
+        if grep -qF "$AUTO_REWORK_KEY" "$PROCESSED_AUTO_REWORK"; then
+            continue
+        fi
+
         log_info "Auto-rework detected: PR #${AGENT_PR_NUM} on branch ${AGENT_PR_BRANCH} has changes requested"
         gh pr edit "$AGENT_PR_NUM" --repo "$repo" \
             --add-label "zapat-rework" 2>/dev/null || log_warn "Failed to add zapat-rework label to PR #${AGENT_PR_NUM}"
+        echo "$AUTO_REWORK_KEY" >> "$PROCESSED_AUTO_REWORK"
     done
 
     # --- Auto-Merge Gate ---

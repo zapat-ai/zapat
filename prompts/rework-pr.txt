@@ -36,12 +36,16 @@ If you are spawning a team, your **FIRST action** must be to call the `TeamCreat
    - Commit SEPARATELY from blocking fixes with message: `refactor: implement review suggestions on PR #{{PR_NUMBER}}`
    - This separate commit allows reverting suggestions independently if needed.
 
-4. **Phase 3 — Review** (skip if working solo):
+4. **Phase 2.5 — Run Tests Before Pushing:**
+   - Run the project's test suite (`npm test`, `bats tests/`, `pytest`, etc.) BEFORE pushing.
+   - If tests fail, fix the failures before committing and pushing. This prevents unnecessary test→rework ping-pong.
+
+5. **Phase 3 — Review** (skip if working solo):
    - If you spawned a security reviewer: After builder pushes both commits, verify all security-related feedback was correctly addressed. Check that new commits didn't introduce new issues.
    - If you spawned a product manager: After builder pushes, verify the original acceptance criteria are still met and no regressions were introduced. Confirm both blocking issues AND suggestions were addressed.
    - All send their assessment to you (the lead).
 
-5. **Shut down the team** when done (skip if working solo).
+6. **Shut down the team** when done (skip if working solo).
 
 ## Feedback Triage Guide
 

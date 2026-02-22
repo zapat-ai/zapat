@@ -67,3 +67,51 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
     assert_success
     assert_output --partial 'cp'
 }
+
+# --- Sequential flow tests ---
+
+@test "on-rework-pr.sh does NOT add zapat-review label (sequential flow)" {
+    # After rework, only zapat-testing should be added; review comes after test passes
+    run grep -F 'add-label "zapat-review"' "$REPO_ROOT/triggers/on-rework-pr.sh"
+    assert_failure
+}
+
+@test "on-rework-pr.sh adds only zapat-testing label after rework" {
+    run grep -F 'add-label "zapat-testing"' "$REPO_ROOT/triggers/on-rework-pr.sh"
+    assert_success
+}
+
+@test "on-test-pr.sh does NOT re-add zapat-testing at entry" {
+    # The test trigger should not add zapat-testing at the start (it's already labeled)
+    # Only the label update section at the end should reference labels
+    run grep -c 'add-label "zapat-testing"' "$REPO_ROOT/triggers/on-test-pr.sh"
+    assert_output "0"
+}
+
+@test "on-test-pr.sh adds zapat-review on test pass" {
+    run grep -F 'add-label "zapat-review"' "$REPO_ROOT/triggers/on-test-pr.sh"
+    assert_success
+}
+
+@test "on-test-pr.sh adds zapat-rework on test failure" {
+    run grep -F 'add-label "zapat-rework"' "$REPO_ROOT/triggers/on-test-pr.sh"
+    assert_success
+}
+
+@test "on-work-issue.sh adds only zapat-testing (not zapat-review) after PR creation" {
+    # Should add zapat-testing but NOT zapat-review
+    run grep -F 'add-label "zapat-review"' "$REPO_ROOT/triggers/on-work-issue.sh"
+    assert_failure
+    run grep -F 'add-label "zapat-testing"' "$REPO_ROOT/triggers/on-work-issue.sh"
+    assert_success
+}
+
+@test "on-rework-pr.sh has cycle counter check" {
+    run grep -F 'MAX_REWORK_CYCLES' "$REPO_ROOT/triggers/on-rework-pr.sh"
+    assert_success
+}
+
+@test "on-rework-pr.sh adds hold label on cycle limit" {
+    run grep -F 'add-label "hold"' "$REPO_ROOT/triggers/on-rework-pr.sh"
+    assert_success
+}

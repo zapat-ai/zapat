@@ -192,3 +192,9 @@ EOF
         fail "Found hardcoded agent roster in rework-pr.txt — agent roster should come from TASK_ASSESSMENT"
     fi
 }
+
+@test "rework-pr.txt includes test-before-push instruction" {
+    local real_prompts="$BATS_TEST_DIRNAME/../prompts"
+    run grep -i 'Run.*test.*before.*push' "$real_prompts/rework-pr.txt"
+    assert_success
+}

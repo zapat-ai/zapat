@@ -230,6 +230,48 @@ reset_completed_item() {
     return 0
 }
 
+# Increment the rework cycle counter for a PR
+# Usage: increment_rework_cycles "owner/repo" "pr" "123" ["project-slug"]
+# Returns: the new cycle count
+increment_rework_cycles() {
+    local repo="$1" type="$2" number="$3"
+    local project="${4:-${CURRENT_PROJECT:-default}}"
+    local key="${project}--${repo//\//-}_${type}_${number}"
+    local state_file="$ITEM_STATE_DIR/${key}.json"
+
+    if [[ ! -f "$state_file" ]]; then
+        echo "0"
+        return 1
+    fi
+
+    local current_cycles
+    current_cycles=$(jq -r '.rework_cycles // 0' "$state_file" 2>/dev/null)
+    local new_cycles=$((current_cycles + 1))
+
+    local tmp_file="${state_file}.tmp"
+    jq --argjson cycles "$new_cycles" '.rework_cycles = $cycles' "$state_file" > "$tmp_file" && mv "$tmp_file" "$state_file"
+
+    echo "$new_cycles"
+    return 0
+}
+
+# Get the current rework cycle count for a PR
+# Usage: get_rework_cycles "owner/repo" "pr" "123" ["project-slug"]
+# Returns: the current cycle count (0 if not set)
+get_rework_cycles() {
+    local repo="$1" type="$2" number="$3"
+    local project="${4:-${CURRENT_PROJECT:-default}}"
+    local key="${project}--${repo//\//-}_${type}_${number}"
+    local state_file="$ITEM_STATE_DIR/${key}.json"
+
+    if [[ ! -f "$state_file" ]]; then
+        echo "0"
+        return 0
+    fi
+
+    jq -r '.rework_cycles // 0' "$state_file" 2>/dev/null
+}
+
 # List all items that are ready for retry
 # Usage: list_retryable_items ["project-slug"]
 #        If project is given, only return items for that project.

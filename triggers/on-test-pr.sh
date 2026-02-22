@@ -27,10 +27,6 @@ set_project "$PROJECT_SLUG"
 
 log_info "Running tests for PR #${PR_NUMBER} in ${REPO} (project: $PROJECT_SLUG)"
 
-# --- Add status label ---
-gh pr edit "$PR_NUMBER" --repo "$REPO" \
-    --add-label "zapat-testing" 2>/dev/null || log_warn "Failed to add zapat-testing label to PR #${PR_NUMBER}"
-
 # --- Concurrency Slot (shares slots with agent-work) ---
 SLOT_DIR="$SCRIPT_DIR/state/agent-work-slots"
 MAX_CONCURRENT=${MAX_CONCURRENT_WORK:-10}
@@ -155,9 +151,28 @@ DURATION=$((END_TIME - START_TIME))
 
 log_info "Test session ended for PR #${PR_NUMBER} (duration: ${DURATION}s)"
 
-# --- Remove zapat-testing label ---
-gh pr edit "$PR_NUMBER" --repo "$REPO" \
-    --remove-label "zapat-testing" 2>/dev/null || log_warn "Failed to remove zapat-testing label from PR #${PR_NUMBER}"
+# --- Determine test outcome from PR comments ---
+TEST_COMMENTS=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+    --jq '.[].body' 2>/dev/null || echo "")
+TEST_PASSED=false
+if echo "$TEST_COMMENTS" | grep -qF "agent-test-passed"; then
+    TEST_PASSED=true
+fi
+
+# --- Update labels based on test outcome (sequential flow) ---
+if [[ "$TEST_PASSED" == "true" ]]; then
+    # Tests passed: move to review
+    gh pr edit "$PR_NUMBER" --repo "$REPO" \
+        --remove-label "zapat-testing" \
+        --add-label "zapat-review" 2>/dev/null || log_warn "Failed to update labels on PR #${PR_NUMBER}"
+    log_info "Tests passed for PR #${PR_NUMBER}, added zapat-review label"
+else
+    # Tests failed: send back to rework
+    gh pr edit "$PR_NUMBER" --repo "$REPO" \
+        --remove-label "zapat-testing" \
+        --add-label "zapat-rework" 2>/dev/null || log_warn "Failed to update labels on PR #${PR_NUMBER}"
+    log_info "Tests failed for PR #${PR_NUMBER}, added zapat-rework label for fixes"
+fi
 
 # --- Record Metrics ---
 if command -v node &>/dev/null && [[ -f "$SCRIPT_DIR/bin/zapat" ]]; then
