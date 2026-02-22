@@ -721,6 +721,21 @@ $(cat "$footer_file")"
         esac
     fi
 
+    # Determine provider (claude or codex)
+    # AGENT_PROVIDER is canonical (set by lib/provider.sh + poll-github.sh routing)
+    # PROVIDER accepted as alias for backward compatibility
+    local _provider="${AGENT_PROVIDER:-${PROVIDER:-claude}}"
+    # Normalize to lowercase before sanitizing (prevents "Claude" → "laude")
+    _provider=$(printf '%s' "$_provider" | tr '[:upper:]' '[:lower:]')
+    # Sanitize provider name to prevent path traversal (only allow [a-z0-9_-])
+    _provider="${_provider//[^a-z0-9_-]/}"
+    [[ -z "$_provider" ]] && _provider="claude"
+
+    # For Codex provider, use Codex model name instead of Claude's
+    if [[ "$_provider" == "codex" ]]; then
+        _subagent_model="${CODEX_MODEL:-o3}"
+    fi
+
     # Cap PR_DIFF at configurable limit (~40,000 characters ≈ ~10,000 tokens)
     local max_diff_chars="${MAX_DIFF_CHARS:-40000}"
     [[ "$max_diff_chars" =~ ^[0-9]+$ ]] || max_diff_chars=40000
@@ -760,6 +775,34 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
         done
     fi
 
+    # PASS 1.5: Process provider-conditional blocks
+    # Strip blocks for the inactive provider, unwrap blocks for the active provider
+    if [[ "$_provider" == "claude" ]]; then
+        # Remove {{#IF_CODEX}}...{{/IF_CODEX}} blocks (including tags and content)
+        while [[ "$content" == *'{{#IF_CODEX}}'* ]]; do
+            local before="${content%%\{\{#IF_CODEX\}\}*}"
+            local after="${content#*\{\{/IF_CODEX\}\}}"
+            # Guard against unclosed tags (no matching close → infinite loop)
+            [[ "$after" == "$content" ]] && break
+            content="${before}${after}"
+        done
+        # Unwrap {{#IF_CLAUDE}}...{{/IF_CLAUDE}} blocks (remove tags, keep content)
+        content="${content//\{\{#IF_CLAUDE\}\}/}"
+        content="${content//\{\{\/IF_CLAUDE\}\}/}"
+    else
+        # Remove {{#IF_CLAUDE}}...{{/IF_CLAUDE}} blocks (including tags and content)
+        while [[ "$content" == *'{{#IF_CLAUDE}}'* ]]; do
+            local before="${content%%\{\{#IF_CLAUDE\}\}*}"
+            local after="${content#*\{\{/IF_CLAUDE\}\}}"
+            # Guard against unclosed tags (no matching close → infinite loop)
+            [[ "$after" == "$content" ]] && break
+            content="${before}${after}"
+        done
+        # Unwrap {{#IF_CODEX}}...{{/IF_CODEX}} blocks (remove tags, keep content)
+        content="${content//\{\{#IF_CODEX\}\}/}"
+        content="${content//\{\{\/IF_CODEX\}\}/}"
+    fi
+
     # PASS 2: Auto-inject standard variables (resolves all remaining {{PLACEHOLDER}} tokens)
     # Extract REPO_TYPE from explicit args for repo-type-aware agent selection
     local _repo_type=""
@@ -790,6 +833,7 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
     content="${content//\{\{PROJECT_NAME\}\}/${CURRENT_PROJECT:-default}}"
     content="${content//\{\{SUBAGENT_MODEL\}\}/${_subagent_model}}"
     content="${content//\{\{REPO_TYPE\}\}/${_repo_type}}"
+    content="${content//\{\{PROVIDER\}\}/${_provider}}"
 
     echo "$content"
 }
@@ -914,6 +958,7 @@ PRINCIPLES
         implement)
             case "$complexity" in
                 solo) cat <<'REC_SOLO_IMPL'
+{{#IF_CLAUDE}}
 **Recommendation: Work solo.** Small scope — no team needed, but a rigorous security self-check is mandatory before creating the PR.
 - Lead implements, writes tests, commits, and creates PR.
 - Skip team creation and team shutdown steps in the workflow below.
@@ -923,23 +968,50 @@ PRINCIPLES
   - [ ] No sensitive data (PHI, PII, credentials) logged or included in error responses
   - [ ] Auth checks are present wherever data is accessed or modified
   - [ ] All callers of any modified function have been checked — including in unmodified files
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+**Recommendation: Work solo with multi-perspective analysis.**
+Analyze from three perspectives before and after implementing:
+- **Engineering**: Implement code changes, ensure correctness and test coverage
+- **Security**: No hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities. Check all callers of modified functions — including in unmodified files
+- **Product**: Validate the implementation meets the issue's acceptance criteria
+{{/IF_CODEX}}
 
 REC_SOLO_IMPL
                     ;;
                 duo) cat <<'REC_DUO_IMPL'
+{{#IF_CLAUDE}}
 **Recommendation: Core team (3 agents).**
 - **builder** (`subagent_type: {{BUILDER_AGENT}}`): Implements code changes. Only teammate that writes code.
 - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities. Also checks all callers of modified functions in unmodified files.
 - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates the implementation meets the issue's acceptance criteria. Ensures nothing is over-engineered or under-scoped.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+**Recommendation: Work solo with multi-perspective analysis.**
+Analyze from three perspectives before and after implementing:
+- **Engineering**: Implement code changes, ensure correctness and test coverage
+- **Security**: Review for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities. Check all callers of modified functions
+- **Product**: Validate the implementation meets the issue's acceptance criteria
+{{/IF_CODEX}}
 
 REC_DUO_IMPL
                     ;;
                 full|*) cat <<'REC_FULL_IMPL'
+{{#IF_CLAUDE}}
 **Recommendation: Full team (4 agents).**
 - **builder** (`subagent_type: {{BUILDER_AGENT}}`): Implements code changes. Only teammate that writes code.
 - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
 - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX for usability, accessibility, friction. If no UI changes, focuses on API ergonomics.
 - **product-manager** (`subagent_type: {{PRODUCT_AGENT}}`): Validates implementation meets requirements. Ensures nothing is over-engineered or under-scoped.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+**Recommendation: Work solo with comprehensive multi-perspective analysis.**
+This is a large-scope task. Analyze thoroughly from four perspectives before and after implementing:
+- **Engineering**: Implement code changes, ensure correctness, test coverage, and architecture quality
+- **Security**: Review for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities
+- **UX**: Review UI/UX for usability, accessibility, friction (if UI changes present)
+- **Product**: Validate implementation meets all requirements
+{{/IF_CODEX}}
 
 REC_FULL_IMPL
                     ;;
@@ -948,24 +1020,49 @@ REC_FULL_IMPL
         review)
             case "$complexity" in
                 solo) cat <<'REC_SOLO_REVIEW'
+{{#IF_CLAUDE}}
 **Recommendation: Minimum review team (2 agents).** Even small PRs require a security reviewer — do not review alone.
 - **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, correctness, and tests. Checks all callers of modified functions, including in unmodified files.
 - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+**Recommendation: Solo review with dual-perspective analysis.**
+Review from two perspectives:
+- **Code quality**: Review correctness, tests, architecture. Check all callers of modified functions
+- **Security**: Review for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities
+{{/IF_CODEX}}
 
 REC_SOLO_REVIEW
                     ;;
                 duo) cat <<'REC_DUO_REVIEW'
+{{#IF_CLAUDE}}
 **Recommendation: Small review team (2 agents).**
 - **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness. Must read surrounding source files — not just the diff. Must check all callers of modified functions across the entire codebase, including unmodified files.
 - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+**Recommendation: Solo review with dual-perspective analysis.**
+Review from two perspectives:
+- **Code quality**: Review architecture, patterns, performance, correctness. Read surrounding source files — not just the diff. Check all callers of modified functions
+- **Security**: Review for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities
+{{/IF_CODEX}}
 
 REC_DUO_REVIEW
                     ;;
                 full|*) cat <<'REC_FULL_REVIEW'
+{{#IF_CLAUDE}}
 **Recommendation: Full review team (3 agents). Platform-engineer is REQUIRED — do not go solo on full-complexity PRs.**
 - **platform-engineer** (`subagent_type: {{BUILDER_AGENT}}`): Reviews code quality, architecture, patterns, performance, correctness. Must read surrounding source files — not just the diff. Must check all callers of modified functions across the entire codebase, including unmodified files.
 - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Reviews for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
 - **ux-reviewer** (`subagent_type: {{UX_AGENT}}`): Reviews UI/UX changes for usability, accessibility, friction, consistency. Skip if no UI files in PR.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+**Recommendation: Solo review with comprehensive multi-perspective analysis.**
+This is a large-scope PR. Review thoroughly from three perspectives:
+- **Code quality**: Review architecture, patterns, performance, correctness. Read surrounding source files — not just the diff. Check all callers of modified functions
+- **Security**: Review for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities
+- **UX**: Review UI/UX changes for usability, accessibility, friction, consistency (if UI files present)
+{{/IF_CODEX}}
 
 REC_FULL_REVIEW
                     ;;
@@ -973,6 +1070,7 @@ REC_FULL_REVIEW
             ;;
         rework)
             cat <<'REC_REWORK'
+{{#IF_CLAUDE}}
 **Recommendation: Always spawn at minimum builder + security-reviewer.**
 A security reviewer is required after every rework — fixes to blocking issues can introduce new vulnerabilities, and a re-check after pushing is mandatory.
 
@@ -984,13 +1082,22 @@ Read the review feedback, then decide on additional roles:
 - **Style/formatting nits only (no blocking issues)** → Builder works solo, but must run the mandatory security self-check before pushing.
 
 Announce your classification before spawning: "Feedback classification: [blocking-issues|security-concern|scope-question|style-only]. Team: [+security|+security+product|solo-with-checklist]."
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+**Recommendation: Address all feedback solo with security self-check.**
+After addressing feedback, perform a mandatory security review of your own changes:
+- Verify all security-related feedback was correctly addressed
+- Check that fixes didn't introduce new vulnerabilities
+- Verify original acceptance criteria are still met
+{{/IF_CODEX}}
 
 REC_REWORK
             ;;
     esac
 
-    # --- Section D: Model Budget Guide ---
+    # --- Section D: Model Budget Guide (Claude-specific) ---
     cat <<'MODEL_GUIDE'
+{{#IF_CLAUDE}}
 ## Model Budget Guide
 
 | Agent Role | Default Model | When to Upgrade |
@@ -1003,11 +1110,13 @@ REC_REWORK
 Spawn each teammate using `model: "{{SUBAGENT_MODEL}}"` and `mode: "bypassPermissions"` in the Task tool call unless you have a specific reason to upgrade. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
 
 **CRITICAL**: You MUST pass `mode: "bypassPermissions"` on every Task tool call when spawning teammates. Without this, teammates will get stuck on "Waiting for team lead approval" for every Bash command and the entire job will stall.
+{{/IF_CLAUDE}}
 
 MODEL_GUIDE
 
-    # --- Section E: Available Roles ---
+    # --- Section E: Available Roles (Claude-specific) ---
     cat <<'ROLES'
+{{#IF_CLAUDE}}
 ## Available Roles
 
 All agent personas available for team composition:
@@ -1015,11 +1124,13 @@ All agent personas available for team composition:
 - `{{SECURITY_AGENT}}` — Security review
 - `{{PRODUCT_AGENT}}` — Product management / requirements validation
 - `{{UX_AGENT}}` — UX/accessibility review
+{{/IF_CLAUDE}}
 
 ROLES
 
     # --- Section F: Lead's Authority ---
     cat <<'AUTHORITY'
+{{#IF_CLAUDE}}
 ## Your Authority as Lead
 
 The complexity classification sets the **minimum** team — you may always add agents, never remove required ones. Your authority:
@@ -1027,6 +1138,15 @@ The complexity classification sets the **minimum** team — you may always add a
 - **Upgrade model assignments** — Upgrade subagents to opus for security-critical, auth-sensitive, or cryptographic code. The default is sonnet.
 - **Skip the UX reviewer only** — The UX reviewer may be skipped if there are genuinely no UI files in the PR (*.tsx, *.jsx, *.swift, *.kt, *.html, *.css, etc.). All other required roles must be spawned.
 - **Add agents** — If the task touches compliance-sensitive areas, add a compliance reviewer even if not recommended.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+## Quality Standards
+
+Even when working solo, maintain rigorous quality:
+- Always perform security self-review — never skip the security perspective
+- Check all callers of modified functions, including in unmodified files
+- If the task touches auth, crypto, or injection-sensitive code, be extra thorough in security analysis
+{{/IF_CODEX}}
 
 Ground your decisions in the Leadership Principles above. If you lack sufficient information to make a confident decision, add a comment asking for human guidance rather than guessing.
 AUTHORITY

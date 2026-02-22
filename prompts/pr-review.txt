@@ -23,6 +23,7 @@
 
 ## Workflow
 
+{{#IF_CLAUDE}}
 Your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. Always spawn a team — do not review alone.
 
 1. **Team Setup**:
@@ -35,6 +36,21 @@ Your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task`
    - **security-reviewer**: Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.
    - **UX reviewer** (if spawned): Evaluate for friction, accessibility, responsive design, and consistency.
    - All teammates send their review to you (the lead). You synthesize into the final review.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+You are reviewing this PR solo. Analyze it from multiple expert perspectives.
+
+1. **Code Quality Review**:
+   - Read surrounding source files — not just the diff. For every function **modified** by this PR, find all callers across the entire codebase (including unmodified files) and verify they correctly handle the new behavior.
+   - Check for crash risks, unhandled rejections, error handling gaps, and performance concerns.
+
+2. **Security Review**:
+   - Check for hardcoded secrets/API keys, sensitive data in insecure storage, missing auth checks, injection risks.
+
+3. **UX Review** (if applicable):
+   - If the PR contains UI-related files (*.tsx, *.jsx, *.vue, *.svelte, *.css, *.scss, *.html, *.swift, *.kt), evaluate for friction, accessibility, responsive design, and consistency.
+   - If no UI files are present, note "No UI changes — UX review skipped."
+{{/IF_CODEX}}
 
 3. **Review guidelines — DO NOT flag**:
    - Swift/TypeScript style that matches existing code patterns
@@ -85,8 +101,10 @@ List each suggestion with a clear, actionable description. Prefix each with `- [
 gh pr comment {{PR_NUMBER}} --repo {{REPO}} --body "YOUR_REVIEW_OUTPUT"
 ```
 
+{{#IF_CLAUDE}}
 6. **Shut down the team** when done.
+{{/IF_CLAUDE}}
 
 ### Safety Notes
-- All teammates are read-only — no code changes, only review
+- All review is read-only — no code changes, only review
 - Review the CHANGES, not the entire codebase. Don't flag existing patterns.

@@ -1,6 +1,11 @@
+{{#IF_CLAUDE}}
 You are the engineering lead. You MUST create an Agent Team to research and analyze this issue. Do NOT attempt to do this alone.
 
 **CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT do the research yourself. The whole point is getting multiple expert perspectives.**
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+You are the engineering lead. Research and analyze this issue thoroughly from multiple expert perspectives.
+{{/IF_CODEX}}
 
 ## Issue Details
 - **Repository**: {{REPO}}
@@ -15,6 +20,7 @@ You are the engineering lead. You MUST create an Agent Team to research and anal
 
 ## Instructions
 
+{{#IF_CLAUDE}}
 1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. Select teammates based on what the issue requires:
 
    **Always include:**
@@ -37,6 +43,18 @@ You are the engineering lead. You MUST create an Agent Team to research and anal
    - Team reaches consensus on recommendations
 
 3. **Produce a structured research output** with these sections:
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+Analyze this issue sequentially from each expert perspective:
+
+1. **Product perspective**: Feature prioritization, roadmap alignment, cross-team trade-offs. Analyze which recommendations are most impactful and how they fit the product strategy.
+
+2. **Engineering perspective**: Read relevant source code and documentation. Assess technical feasibility, architecture considerations, and implementation approach.
+
+3. **Security perspective** (if applicable): Evaluate security implications if the issue touches auth, data flows, or sensitive systems.
+
+4. **Produce a structured research output** with these sections:
+{{/IF_CODEX}}
 
 ## Research Report — #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
@@ -116,15 +134,26 @@ For each actionable recommendation, specify:
    gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "YOUR_RESEARCH_REPORT"
    ```
 
+   After creating all sub-issues and posting the research report, post a
+   machine-readable tracking comment for automated program tracking:
+   ```
+   gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "<!-- zapat-sub-issues: X,Y,Z -->"
+   ```
+   Replace X,Y,Z with the comma-separated issue numbers of ALL sub-issues
+   you created. This MUST be a separate comment (not inside the research
+   report) so the pipeline can discover sub-issues programmatically.
+
 6. **Close the original issue** if it has been fully superseded by more specific follow-up issues:
    ```
    gh issue close {{ISSUE_NUMBER}} --repo {{REPO}} --comment "Superseded by follow-up issues: #X, #Y, #Z"
    ```
    If the original issue represents an ongoing concern that should remain open, add the research comment but do NOT close it.
 
+{{#IF_CLAUDE}}
 7. **Shut down the team** when done.
+{{/IF_CLAUDE}}
 
 ### Safety Notes
-- All teammates are read-only — no code changes, only analysis and issue creation
+- All analysis is read-only — no code changes, only analysis and issue creation
 - Keep the research report concise and actionable
 - Do NOT create `agent-research` sub-issues unless the research question is genuinely separate from this one
