@@ -317,11 +317,21 @@ check_prereqs() {
         failed=1
     fi
 
-    # Check claude CLI is available
-    if ! command -v claude &>/dev/null; then
-        log_error "claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
-        PREREQ_FAILURES="${PREREQ_FAILURES}\n- claude CLI not found"
-        failed=1
+    # Check AI CLI is available (provider-aware)
+    if [[ -f "${AUTOMATION_DIR}/lib/provider.sh" ]] && declare -f provider_prereq_check &>/dev/null; then
+        local provider_failures
+        if ! provider_failures=$(provider_prereq_check); then
+            log_error "${AGENT_PROVIDER:-claude} provider prerequisites failed"
+            PREREQ_FAILURES="${PREREQ_FAILURES}${provider_failures}"
+            failed=1
+        fi
+    else
+        # Fallback: check claude CLI directly
+        if ! command -v claude &>/dev/null; then
+            log_error "claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
+            PREREQ_FAILURES="${PREREQ_FAILURES}\n- claude CLI not found"
+            failed=1
+        fi
     fi
 
     # Check jq is available
@@ -692,13 +702,24 @@ substitute_prompt() {
 $(cat "$footer_file")"
     fi
 
-    # Derive Task tool model shorthand from CLAUDE_SUBAGENT_MODEL env var
+    # Derive Task tool model shorthand from subagent model env var.
+    # Uses provider_get_model_shorthand() if available, otherwise falls back to
+    # pattern matching for Claude model names.
     local _subagent_model="sonnet"
-    case "${CLAUDE_SUBAGENT_MODEL:-}" in
-        *opus*) _subagent_model="opus" ;;
-        *haiku*) _subagent_model="haiku" ;;
-        *sonnet*) _subagent_model="sonnet" ;;
-    esac
+    local _raw_subagent_model="${CLAUDE_SUBAGENT_MODEL:-}"
+    # Codex provider uses its own model env var
+    if [[ "${AGENT_PROVIDER:-claude}" == "codex" ]]; then
+        _raw_subagent_model="${CODEX_SUBAGENT_MODEL:-${_raw_subagent_model}}"
+    fi
+    if declare -f provider_get_model_shorthand &>/dev/null && [[ -n "$_raw_subagent_model" ]]; then
+        _subagent_model="$(provider_get_model_shorthand "$_raw_subagent_model")"
+    else
+        case "$_raw_subagent_model" in
+            *opus*) _subagent_model="opus" ;;
+            *haiku*) _subagent_model="haiku" ;;
+            *sonnet*) _subagent_model="sonnet" ;;
+        esac
+    fi
 
     # Cap PR_DIFF at configurable limit (~40,000 characters ≈ ~10,000 tokens)
     local max_diff_chars="${MAX_DIFF_CHARS:-40000}"

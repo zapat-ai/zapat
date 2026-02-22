@@ -179,8 +179,8 @@ log_info "Timeout: ${TIMEOUT}s"
 log_info "Log: $LOG_FILE"
 
 # --- Run Claude ---
-CLAUDE_EXIT=0
-CLAUDE_OUTPUT=""
+AGENT_EXIT=0
+AGENT_OUTPUT=""
 START_TIME=$(date +%s)
 START_TIME_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -189,19 +189,35 @@ PROMPT_TMPFILE=$(mktemp)
 echo "$FINAL_PROMPT" > "$PROMPT_TMPFILE"
 trap 'rm -f "$PROMPT_TMPFILE"' EXIT
 
-# Use gtimeout on macOS, timeout on Linux
-if [[ "$(detect_os)" == "macos" ]]; then
-    TIMEOUT_CMD="gtimeout"
-else
-    TIMEOUT_CMD="timeout"
+# Load provider abstraction if available
+if [[ -f "$SCRIPT_DIR/lib/provider.sh" ]]; then
+    source "$SCRIPT_DIR/lib/provider.sh"
 fi
 
-CLAUDE_OUTPUT=$($TIMEOUT_CMD "${TIMEOUT}" claude \
-    -p "$(cat "$PROMPT_TMPFILE")" \
-    --model "$EFFECTIVE_MODEL" \
-    --allowedTools "$ALLOWED_TOOLS" \
-    --max-budget-usd "$BUDGET" \
-    2>&1) || CLAUDE_EXIT=$?
+# Run via provider abstraction or direct claude invocation (fallback)
+if declare -f provider_run_noninteractive &>/dev/null; then
+    AGENT_OUTPUT=$(provider_run_noninteractive \
+        "$PROMPT_TMPFILE" \
+        "$EFFECTIVE_MODEL" \
+        "$ALLOWED_TOOLS" \
+        "$BUDGET" \
+        "$TIMEOUT" \
+    ) || AGENT_EXIT=$?
+else
+    # Fallback: direct claude invocation (backward compatibility)
+    if [[ "$(detect_os)" == "macos" ]]; then
+        _TIMEOUT_CMD="gtimeout"
+    else
+        _TIMEOUT_CMD="timeout"
+    fi
+
+    AGENT_OUTPUT=$($_TIMEOUT_CMD "${TIMEOUT}" claude \
+        -p "$(cat "$PROMPT_TMPFILE")" \
+        --model "$EFFECTIVE_MODEL" \
+        --allowedTools "$ALLOWED_TOOLS" \
+        --max-budget-usd "$BUDGET" \
+        2>&1) || AGENT_EXIT=$?
+fi
 
 # Write output to log
 {
@@ -210,35 +226,35 @@ CLAUDE_OUTPUT=$($TIMEOUT_CMD "${TIMEOUT}" claude \
     echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "Model: $EFFECTIVE_MODEL"
     echo "Budget: \$${BUDGET}"
-    echo "Exit Code: $CLAUDE_EXIT"
+    echo "Exit Code: $AGENT_EXIT"
     echo "==================================="
     echo ""
-    echo "$CLAUDE_OUTPUT"
+    echo "$AGENT_OUTPUT"
 } > "$LOG_FILE"
 
 log_info "Output written to $LOG_FILE"
 
 # --- Handle Result ---
-if [[ $CLAUDE_EXIT -eq 124 ]]; then
+if [[ $AGENT_EXIT -eq 124 ]]; then
     log_error "Job timed out after ${TIMEOUT}s"
     NOTIFY_STATUS="failure"
     NOTIFY_MSG="Job '$JOB_NAME' timed out after ${TIMEOUT} seconds.
 
 Last output:
-$(echo "$CLAUDE_OUTPUT" | tail -50)"
+$(echo "$AGENT_OUTPUT" | tail -50)"
     EXIT_CODE=2
-elif [[ $CLAUDE_EXIT -ne 0 ]]; then
-    log_error "Claude exited with code $CLAUDE_EXIT"
+elif [[ $AGENT_EXIT -ne 0 ]]; then
+    log_error "Agent exited with code $AGENT_EXIT"
     NOTIFY_STATUS="failure"
-    NOTIFY_MSG="Job '$JOB_NAME' failed (exit code: $CLAUDE_EXIT).
+    NOTIFY_MSG="Job '$JOB_NAME' failed (exit code: $AGENT_EXIT).
 
 Output:
-$(echo "$CLAUDE_OUTPUT" | tail -100)"
+$(echo "$AGENT_OUTPUT" | tail -100)"
     EXIT_CODE=3
 else
     log_info "Job completed successfully"
     NOTIFY_STATUS="success"
-    NOTIFY_MSG="$CLAUDE_OUTPUT"
+    NOTIFY_MSG="$AGENT_OUTPUT"
     EXIT_CODE=0
 fi
 
@@ -275,10 +291,10 @@ fi
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 if command -v node &>/dev/null && [[ -f "$SCRIPT_DIR/bin/zapat" ]]; then
-    "$SCRIPT_DIR/bin/zapat" metrics record "{\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\",\"project\":\"${CURRENT_PROJECT:-default}\",\"job\":\"$JOB_NAME\",\"repo\":\"\",\"item\":\"\",\"exit_code\":$CLAUDE_EXIT,\"start\":\"$START_TIME_ISO\",\"end\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\",\"duration_s\":$DURATION,\"status\":\"$NOTIFY_STATUS\"}" 2>/dev/null || true
+    "$SCRIPT_DIR/bin/zapat" metrics record "{\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\",\"project\":\"${CURRENT_PROJECT:-default}\",\"job\":\"$JOB_NAME\",\"repo\":\"\",\"item\":\"\",\"exit_code\":$AGENT_EXIT,\"start\":\"$START_TIME_ISO\",\"end\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\",\"duration_s\":$DURATION,\"status\":\"$NOTIFY_STATUS\"}" 2>/dev/null || true
 fi
 
 # --- Structured Log ---
-_log_structured "info" "Job $JOB_NAME completed" "\"job\":\"$JOB_NAME\",\"exit_code\":$CLAUDE_EXIT,\"duration_s\":$DURATION,\"status\":\"$NOTIFY_STATUS\"" 2>/dev/null || true
+_log_structured "info" "Job $JOB_NAME completed" "\"job\":\"$JOB_NAME\",\"exit_code\":$AGENT_EXIT,\"duration_s\":$DURATION,\"status\":\"$NOTIFY_STATUS\"" 2>/dev/null || true
 
 exit $EXIT_CODE

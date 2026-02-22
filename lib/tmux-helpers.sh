@@ -5,16 +5,23 @@
 
 TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
-# Patterns for detecting stuck panes
-# Permission pattern uses exact Claude CLI prompt phrases to avoid false positives
-# from code review output (IAM policies, etc.).
-# Note: PANE_PATTERN_BYPASS removed — defaultMode:bypassPermissions in settings.json
-# means no startup bypass prompt appears. "shift+tab to cycle" now appears in every
-# running session's status bar and must NOT be used as a match pattern.
-PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
-PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
-PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|Do you want to (create|make|run|write|edit)|wants to use the .* tool|approve this action|Waiting for team lead approval)"
-PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
+# Load provider abstraction for pattern detection and launch commands.
+# If provider.sh is available, use provider-sourced patterns; otherwise fall back
+# to hardcoded Claude defaults for backward compatibility.
+_TMUX_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_TMUX_HELPERS_DIR}/provider.sh" ]]; then
+    source "${_TMUX_HELPERS_DIR}/provider.sh"
+    PANE_PATTERN_ACCOUNT_LIMIT="$(provider_get_account_limit_pattern)"
+    PANE_PATTERN_RATE_LIMIT="$(provider_get_rate_limit_pattern)"
+    PANE_PATTERN_PERMISSION="$(provider_get_permission_pattern)"
+    PANE_PATTERN_FATAL="$(provider_get_fatal_pattern)"
+else
+    # Hardcoded fallback (Claude defaults) — kept for backward compatibility
+    PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
+    PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
+    PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|Do you want to (create|make|run|write|edit)|wants to use the .* tool|approve this action|Waiting for team lead approval)"
+    PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
+fi
 
 # Wait for specific content to appear in a tmux pane
 # Usage: wait_for_tmux_content "window-name" "pattern" [timeout_seconds]
@@ -40,15 +47,25 @@ wait_for_tmux_content() {
     return 1
 }
 
-# Launch a Claude session in a tmux window with readiness detection
-# Usage: launch_claude_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars] [agent_model]
+# Launch an agent session in a tmux window with readiness detection.
+# Uses provider_get_launch_cmd() to build the CLI invocation.
+# Usage: launch_agent_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars] [agent_model]
 # Returns: 0 if session launched and prompt submitted, 1 on failure
-launch_claude_session() {
+#
+# Backward-compatible alias:
+launch_claude_session() { launch_agent_session "$@"; }
+
+launch_agent_session() {
     local window="$1"
     local workdir="$2"
     local prompt_file="$3"
     local extra_env="${4:-}"
-    local model="${5:-${CLAUDE_MODEL:-claude-opus-4-6}}"
+    # Provider-aware model default: use the active provider's model env var
+    local _default_model="${CLAUDE_MODEL:-claude-opus-4-6}"
+    if [[ "${AGENT_PROVIDER:-claude}" == "codex" ]]; then
+        _default_model="${CODEX_MODEL:-codex}"
+    fi
+    local model="${5:-$_default_model}"
 
     # Validate inputs
     if [[ ! -d "$workdir" ]]; then
@@ -61,19 +78,39 @@ launch_claude_session() {
         return 1
     fi
 
+    # Validate model name to prevent shell injection via tmux command string
+    if [[ ! "$model" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        log_error "Invalid model name: $model"
+        return 1
+    fi
+
     # Kill any existing window with the same name
     tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
 
-    # Build the command
+    # Build the command using provider abstraction
+    local launch_cmd
+    if declare -f provider_get_launch_cmd &>/dev/null; then
+        launch_cmd="$(provider_get_launch_cmd "$model")"
+    else
+        # Fallback if provider not loaded
+        launch_cmd="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --model '${model}' --dangerously-skip-permissions --permission-mode bypassPermissions"
+    fi
+
     local cmd="cd '$workdir' && "
     cmd+="unset CLAUDECODE && "
-    cmd+="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 "
+    # Credential isolation for tmux sessions: the tmux server inherits its
+    # environment from when it was started, so _isolate_credentials() in
+    # provider.sh only affects the calling shell, not new tmux windows.
+    # Explicitly unset opposing provider's credentials inside the window.
+    case "${AGENT_PROVIDER:-claude}" in
+        claude) cmd+="unset OPENAI_API_KEY CODEX_MODEL CODEX_SUBAGENT_MODEL CODEX_UTILITY_MODEL && " ;;
+        codex)  cmd+="unset ANTHROPIC_API_KEY CLAUDE_MODEL CLAUDE_SUBAGENT_MODEL CLAUDE_UTILITY_MODEL && " ;;
+    esac
     if [[ -n "$extra_env" ]]; then
+        # NOTE: extra_env is trusted — only admin-controlled values should be passed here
         cmd+="$extra_env "
     fi
-    cmd+="claude --model '${model}' "
-    cmd+="--dangerously-skip-permissions "
-    cmd+="--permission-mode bypassPermissions; "
+    cmd+="${launch_cmd}; "
     cmd+="exit"
 
     # Create new tmux window
@@ -149,7 +186,7 @@ launch_claude_session() {
     sleep 2
     tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
 
-    log_info "Prompt submitted to Claude session in window '$window'"
+    log_info "Prompt submitted to ${AGENT_PROVIDER:-claude} session in window '$window'"
     return 0
 }
 
@@ -365,15 +402,23 @@ monitor_session() {
             return 2
         fi
 
-        # Idle detection: Claude finished and is sitting at the ❯ prompt.
-        # The idle pattern is: cost line (✻) followed by separator (───) and
-        # the input prompt (❯), with no active spinner visible.
-        # IMPORTANT: We also require the cost line (✻) to be present, which
-        # proves Claude actually processed a prompt. Without it, the session
+        # Idle detection: agent finished and is sitting at the input prompt
+        # with no active spinner visible.
+        # Uses provider-sourced patterns when available; falls back to Claude defaults.
+        # IMPORTANT: We also require the cost line (✻) to be present (Claude) to
+        # prove the agent actually processed a prompt. Without it, the session
         # is still in its initial startup state and hasn't done any work yet.
+        local _idle_pat _spinner_pat
+        if declare -f provider_get_idle_pattern &>/dev/null; then
+            _idle_pat="$(provider_get_idle_pattern)"
+            _spinner_pat="$(provider_get_spinner_pattern)"
+        else
+            _idle_pat="^❯"
+            _spinner_pat="(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Working|Thinking)"
+        fi
         local tail_content
         tail_content=$(tmux capture-pane -t "${TMUX_SESSION}:${window}" -p -S -5 2>/dev/null || echo "")
-        if echo "$tail_content" | grep -qE "^❯" && echo "$tail_content" | grep -qE "✻" && ! echo "$tail_content" | grep -qE "(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Working|Thinking)"; then
+        if echo "$tail_content" | grep -qE "$_idle_pat" && echo "$tail_content" | grep -qE "✻" && ! echo "$tail_content" | grep -qE "$_spinner_pat"; then
             idle_checks=$((idle_checks + 1))
             if [[ $idle_checks -ge $idle_threshold ]]; then
                 log_info "Session '$window' idle at prompt for $idle_checks checks — killing window"
