@@ -1,6 +1,11 @@
+{{#IF_CLAUDE}}
 You are the engineering lead. You MUST create an Agent Team to triage this issue. Do NOT attempt to do this alone.
 
 **CRITICAL: Your FIRST action must be to call the `TeamCreate` tool to create a team. Then use the `Task` tool to spawn each teammate. Do NOT skip team creation. Do NOT do the triage yourself. The whole point is getting multiple expert perspectives.**
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+You are the engineering lead. Analyze this issue thoroughly from multiple expert perspectives.
+{{/IF_CODEX}}
 
 ## Issue Details
 - **Repository**: {{REPO}}
@@ -17,6 +22,7 @@ You are the engineering lead. You MUST create an Agent Team to triage this issue
 
 ## Instructions
 
+{{#IF_CLAUDE}}
 1. **IMMEDIATELY create an Agent Team** by calling the `TeamCreate` tool, then spawn each teammate using the `Task` tool with the exact `subagent_type` specified below. These are focused expert personas (~1-2KB each) with specific domain expertise.
 
    - **engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type).
@@ -35,6 +41,18 @@ You are the engineering lead. You MUST create an Agent Team to triage this issue
    - All teammates send their analysis to you (the lead). You synthesize into the final triage.
 
 3. **Synthesize the final triage** from all teammate inputs. Use this format:
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+Analyze this issue sequentially from each expert perspective:
+
+1. **Engineering perspective**: Read relevant source files to understand the current state. Assess which files are affected, estimate complexity (Small/Medium/Large), and suggest a technical approach.
+
+2. **Product perspective**: Assess priority (P0-P3), user impact, and whether this aligns with product goals. Consider trade-offs.
+
+3. **Security perspective**: Flag any security concerns with the proposed change. Does it touch auth or sensitive data flows?
+
+4. **Synthesize the final triage** combining all perspectives. Use this format:
+{{/IF_CODEX}}
 
 ## Issue Triage — #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
@@ -42,7 +60,7 @@ You are the engineering lead. You MUST create an Agent Team to triage this issue
 Small (< 1 day), Medium (1-3 days), or Large (3+ days) — with brief justification from the engineer's analysis.
 
 ### Suggested Priority
-P0-critical, P1-high, P2-medium, or P3-low — incorporating the product manager's rationale and clinical advisor's perspective.
+P0-critical, P1-high, P2-medium, or P3-low — incorporating the product manager's rationale.
 
 ### Security Considerations
 Any security implications — from the security reviewer. "None" if clean.
@@ -60,15 +78,15 @@ Any blocking issues, prerequisites, or related work.
 Additional labels to add beyond what's already applied.
 
 ### Auto-Implementation Decision
-Based on the TEAM's collective analysis, decide if this issue should be automatically implemented by an agent team.
+Based on the analysis above, decide if this issue should be automatically implemented.
 
 **Add `agent-work` label** if ALL of these are true:
 - Acceptance criteria are clear enough for an engineer to implement
 - No external dependencies or API key provisioning needed (agent can't provision credentials)
 - No database schema migrations required (agent can't run migrations)
-- The team agrees the requirements are unambiguous
+- The requirements are unambiguous
 
-Complexity is NOT a blocker. Small, Medium, and Large issues should all be auto-implemented. The implementation team has 5 members (builder, security, UX, clinical, PM) and a human reviews the PR before merge. The worst outcome is a PR that needs rework.
+Complexity is NOT a blocker. Small, Medium, and Large issues should all be auto-implemented. The pipeline will assign an appropriately-sized team and a human reviews the PR before merge. The worst outcome is a PR that needs rework.
 
 **Do NOT add `agent-work`** only if:
 - Missing acceptance criteria (agent won't know what to build)
@@ -92,13 +110,21 @@ If suitable, run:
 gh issue edit {{ISSUE_NUMBER}} --repo {{REPO}} --add-label "agent-research"
 ```
 
+{{#IF_CLAUDE}}
 4. **Post the triage as a GitHub comment** on the issue:
 ```
 gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "YOUR_TRIAGE_OUTPUT"
 ```
 
 5. **Shut down the team** when done.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+5. **Post the triage as a GitHub comment** on the issue:
+```
+gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "YOUR_TRIAGE_OUTPUT"
+```
+{{/IF_CODEX}}
 
 ### Safety Notes
-- All teammates are read-only — no code changes, only analysis
+- All analysis is read-only — no code changes, only analysis
 - Keep the triage concise and actionable

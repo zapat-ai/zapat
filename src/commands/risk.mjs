@@ -11,6 +11,19 @@ export function registerRiskCommand(program) {
     .action(runRisk);
 }
 
+// Pipeline-critical files — changes here can break the automation pipeline itself.
+// Any PR touching these gets automatic high risk, blocking auto-merge.
+const PIPELINE_CRITICAL_PATTERNS = [
+  /^lib\/item-state\.sh$/,
+  /^bin\/poll-github\.sh$/,
+  /^triggers\/.*\.sh$/,
+  /^lib\/common\.sh$/,
+  /^lib\/provider\.sh$/,
+  /^lib\/tmux-helpers\.sh$/,
+  /^bin\/startup\.sh$/,
+  /^bin\/run-agent\.sh$/,
+];
+
 const HIGH_RISK_PATTERNS = [
   /^.*auth\//i,
   /^.*iam/i,
@@ -80,6 +93,10 @@ const REPO_RISK = {
 };
 
 function classifyFile(filepath) {
+  // Pipeline-critical files always classify as high risk
+  for (const pat of PIPELINE_CRITICAL_PATTERNS) {
+    if (pat.test(filepath)) return 'high';
+  }
   for (const pat of HIGH_RISK_PATTERNS) {
     if (pat.test(filepath)) return 'high';
   }
@@ -139,6 +156,21 @@ function runRisk(repo, prNumber) {
     }
   }
 
+  // Check for pipeline-critical files specifically
+  let pipelineCriticalFiles = 0;
+  for (const file of files) {
+    const path = file.path || file.filename || '';
+    for (const pat of PIPELINE_CRITICAL_PATTERNS) {
+      if (pat.test(path)) {
+        pipelineCriticalFiles++;
+        break;
+      }
+    }
+  }
+
+  if (pipelineCriticalFiles > 0) {
+    reasons.push(`${pipelineCriticalFiles} pipeline-critical file(s) (state machine, poller, triggers) — requires human review`);
+  }
   if (highFiles > 0) {
     reasons.push(`${highFiles} high-risk file(s) (auth, security, schema, IAM, Lambda handlers)`);
   }

@@ -16,6 +16,7 @@
 
 ## Workflow
 
+{{#IF_CLAUDE}}
 If you are spawning a team, your **FIRST action** must be to call the `TeamCreate` tool, then use the `Task` tool to spawn each teammate. If working solo (only for `solo` complexity), skip team creation steps.
 
 1. **Phase 1 — Planning** (if team: all participate; if solo: plan yourself):
@@ -73,6 +74,48 @@ If you are spawning a team, your **FIRST action** must be to call the `TeamCreat
    ```
 
 6. **Shut down the team** when done (skip if working solo).
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+You are working solo. Complete all phases sequentially.
+
+1. **Phase 1 — Planning**:
+   - Read relevant source files to understand existing patterns. Propose implementation plan.
+
+   **Interface Contract Check:** If the issue body contains an `## Interface Contract` section, you MUST implement exactly that interface — same method names, parameter types, return types, and delegate/callback signatures. Do NOT deviate from the contract.
+
+   **Backend API Spec Check:** If the issue body contains a `## Backend API Spec` section, you MUST use exactly that API — same HTTP method, URL, headers, and body format.
+
+2. **Phase 2 — Implementation**:
+   - Implement changes following existing code conventions
+   - Run any available tests/linters
+   - Commit with conventional commit messages (feat:/fix:/refactor:)
+
+3. **Phase 3 — Tests**:
+   - Write unit tests for all new/changed functions and classes
+   - Write integration tests if the change involves: API endpoints, database operations, or cross-service calls
+   - If the repo has no test infrastructure yet:
+     - Detect the stack (package.json → Jest/Vitest, .xcodeproj → XCTest)
+     - Install test devDependencies and create config as needed
+   - Run all tests — iterate until they pass
+   - Mock external dependencies — never make real API calls
+   - Commit tests with: `test: add tests for [description]`
+
+4. **Phase 4 — Self-Review**:
+   Perform a rigorous review from multiple perspectives:
+   - **Security**: No hardcoded secrets, no injection risks, auth checks present, all callers of modified functions verified
+   - **Code quality**: Follows existing patterns, no regressions, proper error handling
+   - **Product**: Meets all acceptance criteria from the issue
+
+5. **Phase 5 — Ship**:
+   Push and create PR:
+   ```
+   git push origin HEAD
+   gh pr create --title "feat: [description]" --body "..." --label "zapat-review"
+   ```
+   Link the issue in the PR body with "Closes #{{ISSUE_NUMBER}}".
+
+   **Target Branch:** If the issue body contains a `**Target Branch:** feature/SLUG` directive, the PR MUST target that branch instead of the default branch.
+{{/IF_CODEX}}
 
 ### Safety Notes
 - NEVER modify files outside the working directory

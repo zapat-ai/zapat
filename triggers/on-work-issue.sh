@@ -8,6 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/item-state.sh"
+source "$SCRIPT_DIR/lib/provider.sh"
 source "$SCRIPT_DIR/lib/tmux-helpers.sh"
 load_env
 
@@ -141,7 +142,7 @@ if echo "$ISSUE_LABELS" | grep -qiw "agent-full-review"; then
 fi
 
 log_info "Complexity classification: $COMPLEXITY for issue #${ISSUE_NUMBER}"
-_log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"implement\",\"issue\":$ISSUE_NUMBER,\"repo\":\"$REPO\""
+_log_structured "info" "Complexity classified" "\"complexity\":\"$COMPLEXITY\",\"job_type\":\"implement\",\"issue\":$ISSUE_NUMBER,\"repo\":\"$REPO\",\"provider\":\"${AGENT_PROVIDER:-claude}\""
 
 TASK_ASSESSMENT=$(generate_task_assessment "$COMPLEXITY" "implement")
 # --- Copy slim CLAUDE.md into worktree ---
@@ -180,7 +181,7 @@ else
     TMUX_WINDOW="work-${REPO##*/}-${ISSUE_NUMBER}"
 fi
 
-launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE"
+launch_agent_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---

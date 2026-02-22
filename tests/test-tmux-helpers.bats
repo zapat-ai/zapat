@@ -185,24 +185,49 @@ teardown() {
 # --- Permission pattern tests ---
 # Load actual patterns from tmux-helpers.sh for testing
 
+# Load patterns from provider abstraction (claude provider is default)
 _load_permission_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_PERMISSION=$(grep '^PANE_PATTERN_PERMISSION=' "$src" | sed 's/^PANE_PATTERN_PERMISSION=//' | tr -d '"')
+    local provider_dir="${BATS_TEST_DIRNAME}/../lib/providers"
+    if [[ -f "$provider_dir/claude.sh" ]]; then
+        source "$provider_dir/claude.sh"
+        PANE_PATTERN_PERMISSION="$(provider_get_permission_pattern)"
+    else
+        local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+        PANE_PATTERN_PERMISSION=$(grep 'PANE_PATTERN_PERMISSION=' "$src" | head -1 | sed 's/.*PANE_PATTERN_PERMISSION=//' | tr -d '"')
+    fi
 }
 
 _load_rate_limit_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_RATE_LIMIT=$(grep '^PANE_PATTERN_RATE_LIMIT=' "$src" | sed 's/^PANE_PATTERN_RATE_LIMIT=//' | tr -d '"')
+    local provider_dir="${BATS_TEST_DIRNAME}/../lib/providers"
+    if [[ -f "$provider_dir/claude.sh" ]]; then
+        source "$provider_dir/claude.sh"
+        PANE_PATTERN_RATE_LIMIT="$(provider_get_rate_limit_pattern)"
+    else
+        local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+        PANE_PATTERN_RATE_LIMIT=$(grep 'PANE_PATTERN_RATE_LIMIT=' "$src" | head -1 | sed 's/.*PANE_PATTERN_RATE_LIMIT=//' | tr -d '"')
+    fi
 }
 
 _load_account_limit_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_ACCOUNT_LIMIT=$(grep '^PANE_PATTERN_ACCOUNT_LIMIT=' "$src" | sed 's/^PANE_PATTERN_ACCOUNT_LIMIT=//' | tr -d '"')
+    local provider_dir="${BATS_TEST_DIRNAME}/../lib/providers"
+    if [[ -f "$provider_dir/claude.sh" ]]; then
+        source "$provider_dir/claude.sh"
+        PANE_PATTERN_ACCOUNT_LIMIT="$(provider_get_account_limit_pattern)"
+    else
+        local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+        PANE_PATTERN_ACCOUNT_LIMIT=$(grep 'PANE_PATTERN_ACCOUNT_LIMIT=' "$src" | head -1 | sed 's/.*PANE_PATTERN_ACCOUNT_LIMIT=//' | tr -d '"')
+    fi
 }
 
 _load_fatal_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_FATAL=$(grep '^PANE_PATTERN_FATAL=' "$src" | sed 's/^PANE_PATTERN_FATAL=//' | tr -d '"')
+    local provider_dir="${BATS_TEST_DIRNAME}/../lib/providers"
+    if [[ -f "$provider_dir/claude.sh" ]]; then
+        source "$provider_dir/claude.sh"
+        PANE_PATTERN_FATAL="$(provider_get_fatal_pattern)"
+    else
+        local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
+        PANE_PATTERN_FATAL=$(grep 'PANE_PATTERN_FATAL=' "$src" | head -1 | sed 's/.*PANE_PATTERN_FATAL=//' | tr -d '"')
+    fi
 }
 
 # -- Motivation: the OLD broad pattern caused false positives --
