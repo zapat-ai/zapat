@@ -725,6 +725,8 @@ $(cat "$footer_file")"
     # AGENT_PROVIDER is canonical (set by lib/provider.sh + poll-github.sh routing)
     # PROVIDER accepted as alias for backward compatibility
     local _provider="${AGENT_PROVIDER:-${PROVIDER:-claude}}"
+    # Normalize to lowercase before sanitizing (prevents "Claude" → "laude")
+    _provider=$(printf '%s' "$_provider" | tr '[:upper:]' '[:lower:]')
     # Sanitize provider name to prevent path traversal (only allow [a-z0-9_-])
     _provider="${_provider//[^a-z0-9_-]/}"
     [[ -z "$_provider" ]] && _provider="claude"
@@ -780,6 +782,8 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
         while [[ "$content" == *'{{#IF_CODEX}}'* ]]; do
             local before="${content%%\{\{#IF_CODEX\}\}*}"
             local after="${content#*\{\{/IF_CODEX\}\}}"
+            # Guard against unclosed tags (no matching close → infinite loop)
+            [[ "$after" == "$content" ]] && break
             content="${before}${after}"
         done
         # Unwrap {{#IF_CLAUDE}}...{{/IF_CLAUDE}} blocks (remove tags, keep content)
@@ -790,6 +794,8 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
         while [[ "$content" == *'{{#IF_CLAUDE}}'* ]]; do
             local before="${content%%\{\{#IF_CLAUDE\}\}*}"
             local after="${content#*\{\{/IF_CLAUDE\}\}}"
+            # Guard against unclosed tags (no matching close → infinite loop)
+            [[ "$after" == "$content" ]] && break
             content="${before}${after}"
         done
         # Unwrap {{#IF_CODEX}}...{{/IF_CODEX}} blocks (remove tags, keep content)

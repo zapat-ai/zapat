@@ -283,6 +283,45 @@ EOF
     assert_output --partial "Provider: evil_cmd"
 }
 
+@test "AGENT_PROVIDER with mixed case is normalized to lowercase" {
+    export AGENT_PROVIDER='Claude'
+    cat > "$BATS_TEST_TMPDIR/prompts/test.txt" <<'EOF'
+Provider: {{PROVIDER}}
+{{#IF_CLAUDE}}
+Claude content.
+{{/IF_CLAUDE}}
+{{#IF_CODEX}}
+Codex content.
+{{/IF_CODEX}}
+EOF
+
+    run substitute_prompt "$BATS_TEST_TMPDIR/prompts/test.txt"
+    assert_success
+    assert_output --partial "Provider: claude"
+    assert_output --partial "Claude content."
+    refute_output --partial "Codex content."
+}
+
+@test "unclosed conditional tag is left verbatim (not stripped)" {
+    cat > "$BATS_TEST_TMPDIR/prompts/test.txt" <<'EOF'
+Before.
+{{#IF_CLAUDE}}
+Unclosed claude block with no closing tag.
+After.
+EOF
+
+    # When provider is codex, the unclosed IF_CLAUDE block has no matching
+    # closing tag, so the regex won't match and the content (including the
+    # opening tag) remains in the output verbatim. This is expected behavior.
+    export AGENT_PROVIDER=codex
+    run substitute_prompt "$BATS_TEST_TMPDIR/prompts/test.txt"
+    assert_success
+    assert_output --partial "Before."
+    assert_output --partial "After."
+    # The opening tag remains since it has no matching close
+    assert_output --partial "{{#IF_CLAUDE}}"
+}
+
 # --- Conditional blocks in footer ---
 
 @test "conditional blocks in shared footer are processed correctly" {
