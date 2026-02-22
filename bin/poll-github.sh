@@ -169,6 +169,49 @@ should_process() {
     return 0
 }
 
+# --- Provider Label Detection ---
+# Reads labels (JSON array or comma-separated string) and sets AGENT_PROVIDER.
+# Priority: claude label wins if both present (with warning).
+# Falls back to AGENT_PROVIDER from .env (default: claude).
+# Usage: detect_provider_label "$LABELS_JSON_OR_CSV"
+# Side-effect: exports AGENT_PROVIDER
+detect_provider_label() {
+    local labels="$1"
+    local has_codex=false
+    local has_claude=false
+
+    # Detect format: JSON array starts with '[', otherwise treat as CSV
+    if [[ "$labels" == "["* ]]; then
+        # JSON array of label objects (e.g., [{"name":"codex"}, ...])
+        if echo "$labels" | jq -e '.[] | select(.name == "codex")' &>/dev/null; then
+            has_codex=true
+        fi
+        if echo "$labels" | jq -e '.[] | select(.name == "claude")' &>/dev/null; then
+            has_claude=true
+        fi
+    else
+        # Comma-separated string (e.g., "agent-work,codex,feature")
+        if echo ",$labels," | grep -q ",codex,"; then
+            has_codex=true
+        fi
+        if echo ",$labels," | grep -q ",claude,"; then
+            has_claude=true
+        fi
+    fi
+
+    if [[ "$has_claude" == "true" && "$has_codex" == "true" ]]; then
+        log_warn "Conflicting provider labels: both 'codex' and 'claude' present — preferring claude"
+        export AGENT_PROVIDER="claude"
+    elif [[ "$has_codex" == "true" ]]; then
+        export AGENT_PROVIDER="codex"
+    elif [[ "$has_claude" == "true" ]]; then
+        export AGENT_PROVIDER="claude"
+    else
+        # Fall back to .env default (already loaded by load_env)
+        export AGENT_PROVIDER="${AGENT_PROVIDER:-claude}"
+    fi
+}
+
 # --- Dependency Check ---
 # Returns 0 if all "Blocked By" dependencies are closed, 1 if still blocked
 check_dependencies() {
@@ -294,6 +337,7 @@ scan_mentions() {
             pr_labels=$(gh pr view "$item_number" --repo "$repo" --json labels \
                 --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
 
+            detect_provider_label "$pr_labels"
             if echo "$pr_labels" | grep -q "zapat-rework"; then
                 "$SCRIPT_DIR/triggers/on-rework-pr.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
             elif echo "$pr_labels" | grep -q "zapat-testing"; then
@@ -307,6 +351,8 @@ scan_mentions() {
             local issue_labels
             issue_labels=$(gh issue view "$item_number" --repo "$repo" --json labels \
                 --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+
+            detect_provider_label "$issue_labels"
 
             if echo "$issue_labels" | grep -q "agent-research"; then
                 "$SCRIPT_DIR/triggers/on-research-issue.sh" "$repo" "$item_number" "$mention_text" "$cur_project" &
@@ -428,7 +474,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing PR: $PR_KEY — $PR_TITLE (project: $project_slug)"
+        detect_provider_label "$PR_LABELS"
+        log_info "Processing PR: $PR_KEY — $PR_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "pr" "$PR_NUM" "pending" "$project_slug" || true
         "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$PR_NUM" "" "$project_slug" &
         echo "$PR_KEY" >> "$PROCESSED_PRS"
@@ -464,7 +511,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing zapat-review: $REVIEW_KEY — $REVIEW_TITLE (project: $project_slug)"
+        detect_provider_label "$REVIEW_LABELS"
+        log_info "Processing zapat-review: $REVIEW_KEY — $REVIEW_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "pr" "$REVIEW_NUM" "pending" "$project_slug" || true
         "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$REVIEW_NUM" "" "$project_slug" &
         echo "$REVIEW_KEY" >> "$PROCESSED_PRS"
@@ -500,7 +548,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing issue: $ISSUE_KEY — $ISSUE_TITLE (project: $project_slug)"
+        detect_provider_label "$ISSUE_LABELS"
+        log_info "Processing issue: $ISSUE_KEY — $ISSUE_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "issue" "$ISSUE_NUM" "pending" "$project_slug" || true
         "$SCRIPT_DIR/triggers/on-new-issue.sh" "$repo" "$ISSUE_NUM" "" "$project_slug" &
         echo "$ISSUE_KEY" >> "$PROCESSED_ISSUES"
@@ -542,7 +591,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing agent-work: $WORK_KEY — $WORK_TITLE (project: $project_slug)"
+        detect_provider_label "$WORK_LABELS"
+        log_info "Processing agent-work: $WORK_KEY — $WORK_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "work" "$WORK_NUM" "pending" "$project_slug" || true
         "$SCRIPT_DIR/triggers/on-work-issue.sh" "$repo" "$WORK_NUM" "" "$project_slug" &
         echo "$WORK_KEY" >> "$PROCESSED_WORK"
@@ -578,7 +628,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing zapat-rework: $REWORK_KEY — $REWORK_TITLE (project: $project_slug)"
+        detect_provider_label "$REWORK_LABELS"
+        log_info "Processing zapat-rework: $REWORK_KEY — $REWORK_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "rework" "$REWORK_NUM" "pending" "$project_slug" || true
         "$SCRIPT_DIR/triggers/on-rework-pr.sh" "$repo" "$REWORK_NUM" "" "$project_slug" &
         echo "$REWORK_KEY" >> "$PROCESSED_REWORK"
@@ -609,7 +660,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing zapat-testing: $TEST_KEY — $TEST_TITLE (project: $project_slug)"
+        detect_provider_label "$TEST_LABELS"
+        log_info "Processing zapat-testing: $TEST_KEY — $TEST_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "test" "$TEST_NUM" "pending" "$project_slug" >/dev/null || true
         "$SCRIPT_DIR/triggers/on-test-pr.sh" "$repo" "$TEST_NUM" "" "$project_slug" &
         TOTAL_PRS=$((TOTAL_PRS + 1))
@@ -644,7 +696,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing agent-write-tests: $WT_KEY — $WT_TITLE (project: $project_slug)"
+        detect_provider_label "$WT_LABELS"
+        log_info "Processing agent-write-tests: $WT_KEY — $WT_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "write-tests" "$WT_NUM" "pending" "$project_slug" || true
         "$SCRIPT_DIR/triggers/on-write-tests.sh" "$repo" "$WT_NUM" "" "$project_slug" &
         echo "$WT_KEY" >> "$PROCESSED_WRITE_TESTS"
@@ -680,7 +733,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
         TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
         dispatch_limit_reached && continue
-        log_info "Processing agent-research: $RESEARCH_KEY — $RESEARCH_TITLE (project: $project_slug)"
+        detect_provider_label "$RESEARCH_LABELS"
+        log_info "Processing agent-research: $RESEARCH_KEY — $RESEARCH_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
         create_item_state "$repo" "research" "$RESEARCH_NUM" "pending" "$project_slug" || true
         "$SCRIPT_DIR/triggers/on-research-issue.sh" "$repo" "$RESEARCH_NUM" "" "$project_slug" &
         echo "$RESEARCH_KEY" >> "$PROCESSED_RESEARCH"
@@ -750,7 +804,8 @@ while IFS=$'\t' read -r repo local_path repo_type; do
 
             TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
             dispatch_limit_reached && continue
-            log_info "Auto-triage: new issue $AT_KEY — $AT_TITLE (project: $project_slug)"
+            detect_provider_label "$AT_LABELS"
+            log_info "Auto-triage: new issue $AT_KEY — $AT_TITLE (project: $project_slug, provider: $AGENT_PROVIDER)"
             create_item_state "$repo" "issue" "$AT_NUM" "pending" "$project_slug" || true
             "$SCRIPT_DIR/triggers/on-new-issue.sh" "$repo" "$AT_NUM" "" "$project_slug" &
             echo "$AT_KEY" >> "$PROCESSED_AUTO_TRIAGE"
@@ -969,7 +1024,19 @@ while IFS= read -r state_file; do
     # Activate the item's project before dispatching
     set_project "$item_project"
 
-    log_info "Retrying $item_type #$item_number in $item_repo (project: $item_project)"
+    # Detect provider from item labels
+    local retry_labels=""
+    case "$item_type" in
+        pr|rework|test)
+            retry_labels=$(gh pr view "$item_number" --repo "$item_repo" --json labels \
+                --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "") ;;
+        *)
+            retry_labels=$(gh issue view "$item_number" --repo "$item_repo" --json labels \
+                --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "") ;;
+    esac
+    detect_provider_label "$retry_labels"
+
+    log_info "Retrying $item_type #$item_number in $item_repo (project: $item_project, provider: $AGENT_PROVIDER)"
     update_item_state "$state_file" "running"
 
     case "$item_type" in

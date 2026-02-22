@@ -8,6 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/item-state.sh"
+source "$SCRIPT_DIR/lib/provider.sh"
 source "$SCRIPT_DIR/lib/tmux-helpers.sh"
 load_env
 
@@ -135,7 +136,7 @@ else
 fi
 START_TIME=$(date +%s)
 
-launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "${CLAUDE_UTILITY_MODEL:-claude-haiku-4-5-20251001}"
+launch_agent_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "${CLAUDE_UTILITY_MODEL:-claude-haiku-4-5-20251001}"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
@@ -162,7 +163,7 @@ gh pr edit "$PR_NUMBER" --repo "$REPO" \
 # --- Record Metrics ---
 if command -v node &>/dev/null && [[ -f "$SCRIPT_DIR/bin/zapat" ]]; then
     "$SCRIPT_DIR/bin/zapat" metrics record "$(cat <<METRICSEOF
-{"timestamp":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')","job":"agent-test","repo":"$REPO","item":"pr#$PR_NUMBER","exit_code":0,"start":"$(date -u -r "$START_TIME" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "")","end":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')","duration_s":$DURATION,"status":"completed"}
+{"timestamp":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')","job":"agent-test","repo":"$REPO","item":"pr#$PR_NUMBER","exit_code":0,"start":"$(date -u -r "$START_TIME" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "")","end":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')","duration_s":$DURATION,"status":"completed","provider":"${AGENT_PROVIDER:-claude}"}
 METRICSEOF
 )" 2>/dev/null || true
 fi

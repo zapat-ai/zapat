@@ -17,6 +17,8 @@
 | `needs-rebase` | Conflicts need manual resolution |
 | `hold` | Block auto-merge |
 | `human-only` | Pipeline should not touch this |
+| `codex` | Process with OpenAI Codex |
+| `claude` | Process with Claude Code |
 
 ## Safety Rules
 
