@@ -78,6 +78,12 @@ launch_agent_session() {
         return 1
     fi
 
+    # Validate model name to prevent shell injection via tmux command string
+    if [[ ! "$model" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        log_error "Invalid model name: $model"
+        return 1
+    fi
+
     # Kill any existing window with the same name
     tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
 
@@ -92,7 +98,16 @@ launch_agent_session() {
 
     local cmd="cd '$workdir' && "
     cmd+="unset CLAUDECODE && "
+    # Credential isolation for tmux sessions: the tmux server inherits its
+    # environment from when it was started, so _isolate_credentials() in
+    # provider.sh only affects the calling shell, not new tmux windows.
+    # Explicitly unset opposing provider's credentials inside the window.
+    case "${AGENT_PROVIDER:-claude}" in
+        claude) cmd+="unset OPENAI_API_KEY CODEX_MODEL CODEX_SUBAGENT_MODEL CODEX_UTILITY_MODEL && " ;;
+        codex)  cmd+="unset ANTHROPIC_API_KEY CLAUDE_MODEL CLAUDE_SUBAGENT_MODEL CLAUDE_UTILITY_MODEL && " ;;
+    esac
     if [[ -n "$extra_env" ]]; then
+        # NOTE: extra_env is trusted — only admin-controlled values should be passed here
         cmd+="$extra_env "
     fi
     cmd+="${launch_cmd}; "
