@@ -8,6 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/item-state.sh"
+source "$SCRIPT_DIR/lib/provider.sh"
 source "$SCRIPT_DIR/lib/tmux-helpers.sh"
 load_env
 
@@ -134,7 +135,7 @@ else
     TMUX_WINDOW="write-tests-${REPO##*/}-${ISSUE_NUMBER}"
 fi
 
-launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE"
+launch_agent_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---

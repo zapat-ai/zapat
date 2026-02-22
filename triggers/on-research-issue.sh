@@ -9,6 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/item-state.sh"
+source "$SCRIPT_DIR/lib/provider.sh"
 source "$SCRIPT_DIR/lib/tmux-helpers.sh"
 load_env
 
@@ -116,7 +117,7 @@ else
     TMUX_WINDOW="research-${REPO##*/}-${ISSUE_NUMBER}"
 fi
 
-launch_claude_session "$TMUX_WINDOW" "$EFFECTIVE_PATH" "$PROMPT_FILE"
+launch_agent_session "$TMUX_WINDOW" "$EFFECTIVE_PATH" "$PROMPT_FILE"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
@@ -146,7 +147,7 @@ gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
 
 # --- Record Metrics ---
 _log_structured "info" "Research completed for issue #${ISSUE_NUMBER} in ${REPO}" \
-    "\"type\":\"research\",\"repo\":\"$REPO\",\"issue\":$ISSUE_NUMBER"
+    "\"type\":\"research\",\"repo\":\"$REPO\",\"issue\":$ISSUE_NUMBER,\"provider\":\"${AGENT_PROVIDER:-claude}\""
 
 # --- Notify Slack ---
 "$SCRIPT_DIR/bin/notify.sh" \
