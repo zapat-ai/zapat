@@ -66,8 +66,7 @@ ${pane_content}
 </screen>
 
 Respond as JSON: {\"state\": \"...\", \"keys\": \"...\", \"reason\": \"...\"}" \
-        --model claude-haiku-4-5-20251001 \
-        --max-tokens 150 2>/dev/null)
+        --model claude-haiku-4-5-20251001 2>/dev/null)
 
     local exit_code=$?
     if [[ $exit_code -ne 0 || -z "$response" ]]; then
