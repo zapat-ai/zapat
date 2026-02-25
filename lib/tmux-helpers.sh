@@ -80,10 +80,19 @@ launch_claude_session() {
     tmux new-window -t "$TMUX_SESSION" -n "$window" "$cmd"
     log_info "tmux window '$window' created"
 
+    # Verify the window is still alive after a brief delay.
+    # tmux destroys command-bearing windows when the process exits, so if
+    # claude fails to start the window vanishes immediately.
+    sleep 1
+    if ! tmux list-windows -t "$TMUX_SESSION" -F '#{window_name}' 2>/dev/null | grep -qF "$window"; then
+        log_error "Window '$window' died immediately after creation — claude process likely failed to start"
+        return 1
+    fi
+
     if [[ "${TMUX_USE_SLEEP_FALLBACK:-0}" == "1" ]]; then
         # Legacy fallback: hardcoded sleeps
         log_info "Using sleep fallback for tmux interaction"
-        sleep 5
+        sleep 4
         tmux send-keys -t "${TMUX_SESSION}:${window}" Down
         sleep 1
         tmux send-keys -t "${TMUX_SESSION}:${window}" Enter

@@ -95,10 +95,11 @@ else
     READONLY_WORKTREE=""
 fi
 
-# Update trap to clean up worktree on exit
+# Update trap to clean up worktree on exit (preserve original exit code)
 trap '
+    _exit_rc=$?
     [[ -n "${READONLY_WORKTREE:-}" ]] && cleanup_readonly_worktree "$REPO_PATH" "$READONLY_WORKTREE"
-    cleanup_on_exit "" "$ITEM_STATE_FILE" $?
+    cleanup_on_exit "$SLOT_FILE" "$ITEM_STATE_FILE" $_exit_rc
 ' EXIT
 
 # --- Classify Complexity ---
