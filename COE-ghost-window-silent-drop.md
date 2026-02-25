@@ -38,7 +38,7 @@ A triage job for issue #128 was dispatched to a tmux window, but the `claude` pr
 The triage tmux window died immediately after creation, and the pipeline never retried the job.
 
 ### Why 2: Why did the tmux window die immediately?
-`tmux new-window -t session -n name "$cmd"` ties the window lifecycle to the command. When `claude` exited (likely a PATH/init failure in the fresh tmux session), the window was destroyed. There is **no existence check** after window creation — the script assumes the window persists.
+`tmux new-window -t session -n name "$cmd"` ties the window lifecycle to the command. Claude showed a "Do you trust this folder?" dialog with "Yes, I trust this folder" as the default (option 1). The sleep fallback sent `Down` then `Enter` — which moved to option 2 ("No, exit") and confirmed it, killing Claude. There was also **no existence check** after window creation.
 
 ### Why 3: Why didn't the trigger script detect the failure and mark the item as failed?
 Two compounding bugs in the EXIT trap at `on-new-issue.sh:91-94`:
@@ -58,10 +58,12 @@ The sleep fallback (`TMUX_USE_SLEEP_FALLBACK=1`) was a legacy code path that pre
 
 | # | Cause | Location | Type |
 |---|-------|----------|------|
-| 1 | **No window-alive check after `tmux new-window`** | `lib/tmux-helpers.sh:80-87` | Missing validation |
-| 2 | **EXIT trap loses original exit code** | `triggers/on-new-issue.sh:91-94` | Bug — `$?` captures worktree cleanup rc, not the triggering error |
-| 3 | **EXIT trap drops `$SLOT_FILE` reference** | `triggers/on-new-issue.sh:93` | Bug — passes `""` instead of `$SLOT_FILE` |
-| 4 | **`claude` process fails silently in tmux** | `lib/tmux-helpers.sh:80` | Design gap — command-bearing tmux windows die when the process exits |
+| # | Cause | Location | Type |
+|---|-------|----------|------|
+| 1 | **`Down` keystroke selects "No, exit" in trust dialog** | `lib/tmux-helpers.sh:96` (sleep fallback) and `:130,:141` (dynamic path) | Bug — "Yes" is already the default; `Down` moves to "No, exit" |
+| 2 | **No window-alive check after `tmux new-window`** | `lib/tmux-helpers.sh:80-87` | Missing validation |
+| 3 | **EXIT trap loses original exit code** | `triggers/on-new-issue.sh:91-94` | Bug — `$?` captures worktree cleanup rc, not the triggering error |
+| 4 | **EXIT trap drops `$SLOT_FILE` reference** | `triggers/on-new-issue.sh:93` | Bug — passes `""` instead of `$SLOT_FILE` |
 | 5 | **Sleep fallback path has no error handling** | `lib/tmux-helpers.sh:83-96` | Tech debt — legacy path never hardened |
 
 ---
