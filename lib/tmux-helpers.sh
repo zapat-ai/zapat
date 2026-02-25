@@ -92,9 +92,9 @@ launch_claude_session() {
     if [[ "${TMUX_USE_SLEEP_FALLBACK:-0}" == "1" ]]; then
         # Legacy fallback: hardcoded sleeps
         log_info "Using sleep fallback for tmux interaction"
-        sleep 4
-        tmux send-keys -t "${TMUX_SESSION}:${window}" Down
-        sleep 1
+        sleep 5
+        # The trust dialog defaults to "Yes, I trust this folder" (option 1).
+        # Just press Enter to confirm — do NOT send Down (that selects "No, exit").
         tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
         sleep 5
         tmux load-buffer "$prompt_file"
@@ -125,10 +125,9 @@ launch_claude_session() {
             # Already in bypass mode — no confirmation dialog, skip Step 2
             log_info "Session started directly in bypass mode (no confirmation dialog needed)"
         else
-            # Old-style confirmation dialog detected — accept it
-            log_info "Permissions confirmation dialog detected, accepting..."
-            tmux send-keys -t "${TMUX_SESSION}:${window}" Down
-            sleep 1
+            # Trust dialog detected — "Yes, I trust this folder" is already selected.
+            # Just press Enter to confirm (Down would select "No, exit").
+            log_info "Trust/permissions dialog detected, accepting..."
             tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
         fi
     else
@@ -138,8 +137,6 @@ launch_claude_session() {
             log_info "Session already in bypass mode (confirmation dialog not needed)"
         else
             log_warn "Permissions prompt not detected and not in bypass mode, trying confirmation anyway..."
-            tmux send-keys -t "${TMUX_SESSION}:${window}" Down
-            sleep 1
             tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
         fi
     fi
