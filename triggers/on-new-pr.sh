@@ -96,6 +96,7 @@ else
 fi
 
 # Update trap to clean up worktree on exit (preserve original exit code)
+# shellcheck disable=SC2154 # _exit_rc is assigned inside the trap at runtime via $?
 trap '
     _exit_rc=$?
     [[ -n "${READONLY_WORKTREE:-}" ]] && cleanup_readonly_worktree "$REPO_PATH" "$READONLY_WORKTREE"

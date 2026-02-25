@@ -26,6 +26,7 @@ PROJECT_SLUG="${4:-${CURRENT_PROJECT:-default}}"
 set_project "$PROJECT_SLUG"
 
 ITEM_STATE_FILE=$(create_item_state "$REPO" "rebase" "$PR_NUMBER" "running" "$PROJECT_SLUG") || true
+# shellcheck disable=SC2154 # _exit_rc is assigned inside the trap at runtime via $?
 trap '_exit_rc=$?; cleanup_on_exit "" "$ITEM_STATE_FILE" $_exit_rc' EXIT
 
 log_info "Rebasing PR #${PR_NUMBER} in ${REPO} (project: $PROJECT_SLUG)"

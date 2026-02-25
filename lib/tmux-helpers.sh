@@ -203,7 +203,6 @@ check_pane_health() {
     local window="$1"
     local job_name="${2:-monitor}"
     local job_context="${3:-${job_name}}"
-    local auto_resolve="${AUTO_RESOLVE_PROMPTS:-true}"
     local panes
 
     panes=$(tmux list-panes -t "${TMUX_SESSION}:${window}" -F '#{pane_index}' 2>/dev/null) || return 0

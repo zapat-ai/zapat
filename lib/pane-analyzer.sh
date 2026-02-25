@@ -75,7 +75,8 @@ Respond as JSON: {\"state\": \"...\", \"keys\": \"...\", \"reason\": \"...\"}" \
         return 1
     fi
 
-    # Strip markdown fences if Haiku wrapped the response
+    # Strip markdown fences if Haiku wrapped the response (backticks are literal, not expressions)
+    # shellcheck disable=SC2016
     response=$(echo "$response" | sed 's/^```json//; s/^```//; s/```$//' | tr -d '\n')
 
     # Validate it's parseable JSON with required fields
@@ -98,7 +99,6 @@ act_on_pane() {
 
     local result
     result=$(analyze_pane "$window" "$phase" "$job_context")
-    local analyze_exit=$?
 
     local state keys reason
     state=$(echo "$result" | jq -r '.state // "error"')

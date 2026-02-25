@@ -20,9 +20,6 @@ if [[ -z "$PANE_TARGET" ]]; then
     exit 1
 fi
 
-# Extract window name (everything before the last dot)
-WINDOW="${PANE_TARGET%.*}"
-
 # Fast-path: check if actively working
 fast_result=$(_pane_is_active "$PANE_TARGET" "")
 activity=$(echo "$fast_result" | head -1)

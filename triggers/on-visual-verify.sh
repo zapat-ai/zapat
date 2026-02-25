@@ -38,6 +38,7 @@ if ! acquire_slot "$SLOT_DIR" "$MAX_CONCURRENT" "visual" "$REPO" "$PR_NUMBER"; t
     [[ -n "${ITEM_STATE_FILE:-}" && -f "${ITEM_STATE_FILE:-}" ]] && update_item_state "$ITEM_STATE_FILE" "capacity_rejected"
     exit 0
 fi
+# shellcheck disable=SC2154 # _exit_rc is assigned inside the trap at runtime via $?
 trap '_exit_rc=$?; stop_dev_server 2>/dev/null; cleanup_on_exit "$SLOT_FILE" "$ITEM_STATE_FILE" $_exit_rc' EXIT
 
 # --- Fetch PR Details ---
