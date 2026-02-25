@@ -41,6 +41,9 @@ LABELS=(
     "zapat-ci-fix|CCCCCC|CI auto-fix in progress"
     "zapat-visual|CCCCCC|Visual verification in progress"
     "agent-write-tests|0E8A16|Write tests for specified code"
+    "agent-plan|C5DEF5|Proposed work, pending human approval"
+    "agent-phase-2|C5DEF5|Phase 2 work, awaiting Phase 1 completion"
+    "agent-phase-3|C5DEF5|Phase 3 work, awaiting Phase 2 completion"
     # Classification
     "feature|0075CA|New feature"
     "bug|D73A49|Bug fix"

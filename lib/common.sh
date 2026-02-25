@@ -586,6 +586,7 @@ read_agents_conf() {
             product)    PRODUCT_AGENT="$persona" ;;
             ux)         UX_AGENT="$persona" ;;
             compliance) COMPLIANCE_AGENT="$persona" ;;
+            program)    PROGRAM_AGENT="$persona" ;;
             *)          local upper_role; upper_role=$(echo "$role" | tr '[:lower:]' '[:upper:]')
                         export "AGENT_${upper_role}=$persona" ;;
         esac
@@ -608,6 +609,7 @@ read_agents_conf() {
                 product)    PRODUCT_AGENT="$persona" ;;
                 ux)         UX_AGENT="$persona" ;;
                 compliance) COMPLIANCE_AGENT="$persona" ;;
+                program)    PROGRAM_AGENT="$persona" ;;
                 *)          local upper_base; upper_base=$(echo "$base_role" | tr '[:lower:]' '[:upper:]')
                             export "AGENT_${upper_base}=$persona" ;;
             esac
@@ -619,6 +621,7 @@ read_agents_conf() {
     SECURITY_AGENT="${SECURITY_AGENT:-security-reviewer}"
     PRODUCT_AGENT="${PRODUCT_AGENT:-product-manager}"
     UX_AGENT="${UX_AGENT:-ux-reviewer}"
+    PROGRAM_AGENT="${PROGRAM_AGENT:-program-manager}"
 }
 
 # Generate a formatted repo map from repos.conf
@@ -763,6 +766,7 @@ Showing first ~${shown_lines} lines of ${total_lines} total lines (~${max_diff_c
     content="${content//\{\{SECURITY_AGENT\}\}/${SECURITY_AGENT:-security-reviewer}}"
     content="${content//\{\{PRODUCT_AGENT\}\}/${PRODUCT_AGENT:-product-manager}}"
     content="${content//\{\{UX_AGENT\}\}/${UX_AGENT:-ux-reviewer}}"
+    content="${content//\{\{PROGRAM_AGENT\}\}/${PROGRAM_AGENT:-program-manager}}"
     content="${content//\{\{ORG_NAME\}\}/${GITHUB_ORG:-}}"
     content="${content//\{\{COMPLIANCE_RULES\}\}/${compliance_rules}}"
     content="${content//\{\{PROJECT_CONTEXT\}\}/${project_context}}"

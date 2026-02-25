@@ -266,8 +266,8 @@ console.log('\n1e. Prompt Placeholder Verification');
 // Auto-injected placeholders (from substitute_prompt in lib/common.sh)
 const autoInjected = new Set([
   'REPO_MAP', 'BUILDER_AGENT', 'SECURITY_AGENT', 'PRODUCT_AGENT', 'UX_AGENT',
-  'ORG_NAME', 'COMPLIANCE_RULES', 'PROJECT_CONTEXT', 'PROJECT_NAME',
-  'SUBAGENT_MODEL'
+  'PROGRAM_AGENT', 'ORG_NAME', 'COMPLIANCE_RULES', 'PROJECT_CONTEXT',
+  'PROJECT_NAME', 'SUBAGENT_MODEL'
 ]);
 
 // Map of prompt template -> trigger script

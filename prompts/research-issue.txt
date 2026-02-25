@@ -24,6 +24,9 @@ You are the engineering lead. You MUST create an Agent Team to research and anal
    - **engineer** — Use `subagent_type: {{BUILDER_AGENT}}` (select based on the repository type).
      Include when the issue requires technical feasibility assessment or architecture review.
    - **security-reviewer** (`subagent_type: {{SECURITY_AGENT}}`): Security implications. Include when the issue touches auth or data flows.
+   - **program-manager** (`subagent_type: {{PROGRAM_AGENT}}`): Delivery sequencing.
+     Include when research will produce 3+ sub-issues. Reviews for over-decomposition,
+     duplicates, and phase boundaries.
 
    **Model Selection:** Spawn each sub-agent teammate using `model: "{{SUBAGENT_MODEL}}"` in the Task tool call. The lead agent (you) already runs on the model specified by `CLAUDE_MODEL`.
 
@@ -36,7 +39,15 @@ You are the engineering lead. You MUST create an Agent Team to research and anal
    - You facilitate cross-expert discussion where perspectives conflict
    - Team reaches consensus on recommendations
 
-3. **Produce a structured research output** with these sections:
+3. **Program review (if program-manager spawned):**
+   Before creating sub-issues, have the PM review the proposed list:
+   - Consolidates over-decomposed issues (a database change + query + endpoint = 1 issue)
+   - Checks for duplicates via `gh issue list --repo {{REPO}} --state open`
+   - Validates phase boundaries (each phase delivers customer value independently)
+   - Updates `~/.claude/agent-memory/_shared/PIPELINE.md` with program status
+   Lead MUST incorporate PM's consolidation before creating issues.
+
+4. **Produce a structured research output** with these sections:
 
 ## Research Report — #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
@@ -56,16 +67,33 @@ Prioritized list (highest impact first). Each recommendation should be:
 For each actionable recommendation, specify:
 - Issue title
 - Brief description
-- Suggested label: `agent-work` (implementation), `agent-research` (further research), or `human-only` (needs human decision)
+- Suggested label: `agent-plan` (implementation — NEVER `agent-work`), `agent-research` (further research), or `human-only` (needs human decision)
+- Phase: 1, 2, or 3
 - Priority: P0-P3
 
-4. **Create follow-up GitHub issues** for each action item:
-   - Implementation tasks get `agent-work` label (NOT `agent-research` — avoid loops)
+**Phase Organization (REQUIRED when creating 3+ implementation sub-issues):**
+- Phase 1 — Minimum shippable increment (2-4 issues, independently deployable)
+- Phase 2 — Enhancement (builds on Phase 1, starts after Phase 1 merges). Label: `agent-phase-2`
+- Phase 3 — Optimization (optional). Label: `agent-phase-3`
+
+In each sub-issue body, include: `**Phase:** 1` (or 2, 3)
+Include depth marker: `<!-- zapat-depth: 1 -->`
+
+**Consolidation Rule:** Max 8 implementation sub-issues. A database change + query + endpoint = ONE issue, not three.
+
+**Intent Detection:** If the issue body contains (case-insensitive): "research only",
+"investigation only", "do not implement", "strictly research", "just research",
+"research task" — ALL sub-issues MUST get `agent-plan` label. This is also the
+DEFAULT behavior regardless of phrasing — research NEVER creates `agent-work` issues.
+
+5. **Create follow-up GitHub issues** for each action item:
+   - Implementation tasks get `agent-plan` label (NEVER `agent-work` — humans must approve before implementation starts)
+   - Phase 2 issues get `agent-phase-2` label, Phase 3 get `agent-phase-3` label
    - Further research tasks get `agent-research` label (use sparingly, only for genuinely separate research questions)
    - Tasks needing human input get `human-only` label
 
    **IMPORTANT — Feature Branch for Multi-Issue Decomposition:**
-   If you are creating **2 or more** implementation sub-issues (`agent-work`), you MUST first create a feature branch so all PRs target it instead of polluting main:
+   If you are creating **2 or more** implementation sub-issues (`agent-plan`), you MUST first create a feature branch so all PRs target it instead of polluting main:
    ```
    gh api repos/{{REPO}}/git/refs -f ref="refs/heads/feature/SLUG" -f sha="$(gh api repos/{{REPO}}/git/ref/heads/main --jq '.object.sha')"
    ```
@@ -111,9 +139,20 @@ For each actionable recommendation, specify:
    gh issue create --repo {{REPO}} --title "TITLE" --body "BODY" --label "LABEL"
    ```
 
-5. **Post the research summary as a comment** on the original issue:
+6. **Post a phased delivery summary** as a comment on the original issue:
    ```
-   gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "YOUR_RESEARCH_REPORT"
+   ## Research Complete
+   Created N sub-issues in M phases:
+   - **Phase 1** (minimum shippable increment): #X, #Y, #Z
+   - **Phase 2** (after Phase 1 verified): #A, #B
+   All sub-issues labeled `agent-plan` / `agent-phase-N`. To begin:
+   1. Review sub-issues and phase plan
+   2. Relabel Phase 1 issues from `agent-plan` → `agent-work`
+   3. After Phase 1 PRs merge, relabel Phase 2 issues
+   ```
+   Post via:
+   ```
+   gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body "YOUR_RESEARCH_REPORT_AND_PHASE_SUMMARY"
    ```
 
    After creating all sub-issues and posting the research report, post a
@@ -125,13 +164,13 @@ For each actionable recommendation, specify:
    you created. This MUST be a separate comment (not inside the research
    report) so the pipeline can discover sub-issues programmatically.
 
-6. **Close the original issue** if it has been fully superseded by more specific follow-up issues:
+7. **Close the original issue** if it has been fully superseded by more specific follow-up issues:
    ```
    gh issue close {{ISSUE_NUMBER}} --repo {{REPO}} --comment "Superseded by follow-up issues: #X, #Y, #Z"
    ```
    If the original issue represents an ongoing concern that should remain open, add the research comment but do NOT close it.
 
-7. **Shut down the team** when done.
+8. **Shut down the team** when done.
 
 ### Safety Notes
 - All teammates are read-only — no code changes, only analysis and issue creation

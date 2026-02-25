@@ -18,6 +18,9 @@ If already configured, run `/pipeline-check` or `/zapat:pipeline-check` to verif
 | `agent-work` | Skip triage, implement immediately |
 | `agent-research` | Research and analyze, don't code |
 | `agent-write-tests` | Write tests for the specified code |
+| `agent-plan` | Proposed work, pending human approval (not auto-implemented) |
+| `agent-phase-2` | Phase 2 work, awaiting Phase 1 completion |
+| `agent-phase-3` | Phase 3 work, awaiting Phase 2 completion |
 | `hold` | Block auto-merge on this PR |
 | `human-only` | Pipeline should not touch this |
 | `agent-full-review` | Force full team review regardless of complexity |

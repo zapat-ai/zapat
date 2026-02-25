@@ -50,6 +50,12 @@ If you are spawning a team, your **FIRST action** must be to call the `TeamCreat
      gh issue create --repo {{REPO}} --title "Write tests for [area]" --body "..." --label "agent-write-tests"
      ```
 
+   **Issue Creation Guardrails:**
+   - Security/bug issues WITHIN this PR's scope: fix them here, don't create separate issues
+   - Issues genuinely OUT OF SCOPE: create with `agent-plan` label (NEVER `agent-work`)
+   - Include `<!-- zapat-depth: 2 -->` in any sub-issue you create
+   - Maximum 2 out-of-scope issues per implementation session
+
 4. **Review** (skip if working solo):
    - If you spawned a security reviewer: Check for hardcoded secrets, insecure storage, missing auth, OWASP vulnerabilities.
    - If you spawned a UX reviewer: Check for UI friction, accessibility, consistency with existing UX patterns.

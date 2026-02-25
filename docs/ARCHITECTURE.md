@@ -121,7 +121,7 @@ Templates use `{{PLACEHOLDER}}` syntax. `substitute_prompt()` appends `_shared-f
 | `pr-review.txt` | `on-new-pr.sh` | 3-5 agents | Risk level, auto-merge recommendation, review comments |
 | `rework-pr.txt` | `on-rework-pr.sh` | 3-5 agents | Blocking fixes + suggestion fixes + tests |
 | `test-pr.txt` | `on-test-pr.sh` | 1 agent | `<!-- agent-test-passed -->` or `<!-- agent-test-failed -->` |
-| `research-issue.txt` | `on-research-issue.sh` | 3+ agents | Research findings, sub-issues, interface contracts |
+| `research-issue.txt` | `on-research-issue.sh` | 3+ agents | Research findings, phased sub-issues (`agent-plan`), interface contracts |
 | `visual-verify.txt` | `on-visual-verify.sh` | 1 agent | Screenshot-based UX review |
 | `ci-fix.txt` | `on-ci-fix.sh` | 1 agent | Targeted lint/type/format fixes |
 | `write-tests.txt` | `on-write-tests.sh` | 1 agent | Test files + PR |
@@ -141,6 +141,7 @@ Each persona is a Markdown file with YAML frontmatter (`name:`, `permissionMode:
 | `security-reviewer.md` | security | OWASP, injection, auth, secrets, dependency vulns |
 | `product-manager.md` | product | User problems, acceptance criteria, scope validation |
 | `ux-reviewer.md` | ux | Friction, accessibility, consistency, progressive disclosure |
+| `program-manager.md` | program | Delivery sequencing, WIP limits, phase gates |
 | `devops-engineer.md` | devops | CI/CD, IaC, reliability, rollback strategies |
 | `qa-engineer.md` | qa | Adversarial testing, coverage gaps, regression prevention |
 | `technical-writer.md` | writer | Accuracy-first docs, examples, changelog |
@@ -266,6 +267,9 @@ stateDiagram-v2
 | `agent-work` | Issues | Skip triage, implement immediately |
 | `agent-research` | Issues | Research and analyze, produce findings (no code) |
 | `agent-write-tests` | Issues | Write tests for specified code |
+| `agent-plan` | Issues | Proposed work, pending human approval (not auto-implemented) |
+| `agent-phase-2` | Issues | Phase 2 work, awaiting Phase 1 completion |
+| `agent-phase-3` | Issues | Phase 3 work, awaiting Phase 2 completion |
 | `agent-full-review` | PRs | Force full team review regardless of complexity classification |
 | `hold` | PRs | Block auto-merge indefinitely |
 | `human-only` | Issues/PRs | Pipeline will not touch this item |
@@ -330,6 +334,29 @@ Slot files are JSON: `{"pid":…,"job_type":…,"repo":…,"number":…,"started
 
 Stale slot cleanup: `acquire_slot()` checks if the PID in each slot file is still alive. Dead PIDs are cleaned automatically.
 
+### Scan Priority: Finish-Over-Start
+
+The poller processes items closest to completion first. This prevents new work from starving near-done PRs:
+
+| Priority | Label | Rationale |
+|----------|-------|-----------|
+| 1 | `zapat-rework` | 90% done — address review feedback |
+| 2 | `zapat-ci-fix` | Fix trivial CI failures on near-done PRs |
+| 3 | `zapat-testing` | Verify near-done PRs |
+| 4 | `zapat-visual` | Visual verify near-done PRs |
+| 5 | `zapat-review` | Review open PRs |
+| 6 | `agent` (PR) | Human-requested reviews |
+| 7 | `agent-work` | New implementation (only after finishing existing) |
+| 8 | `agent` (issue) | Triage new issues |
+| 9 | `agent-write-tests` | Lower priority new work |
+| 10 | `agent-research` | Lowest priority |
+
+### Program WIP Limits
+
+`MAX_WIP_PER_PROGRAM` (default 3, 0=disabled) limits concurrent implementation issues from the same parent. When a research issue decomposes into sub-issues linked via `<!-- zapat-sub-issues: X,Y,Z -->`, sibling issues share a WIP budget. Parent detection uses:
+1. Issue body patterns: `Part of #N` or `Parent: #N`
+2. Cached repo scan of `<!-- zapat-sub-issues: -->` comments (per repo per cycle)
+
 ### Dispatch Cap
 
 `MAX_DISPATCH_PER_CYCLE` (default 20) limits how many triggers can be dispatched in a single poll cycle. Prevents flood scenarios (e.g., first boot with many existing issues).
@@ -373,6 +400,7 @@ Template (prompts/*.txt)
 | `{{SECURITY_AGENT}}` | `config/{project}/agents.conf` → `security` role |
 | `{{PRODUCT_AGENT}}` | `config/{project}/agents.conf` → `product` role |
 | `{{UX_AGENT}}` | `config/{project}/agents.conf` → `ux` role |
+| `{{PROGRAM_AGENT}}` | `config/{project}/agents.conf` → `program` role |
 | `{{ORG_NAME}}` | `GITHUB_ORG` env var |
 | `{{COMPLIANCE_RULES}}` | Compliance persona content (if `ENABLE_COMPLIANCE_MODE=true`) |
 | `{{PROJECT_CONTEXT}}` | `config/{project}/project-context.txt` |
@@ -552,7 +580,7 @@ See `.env.example` for the complete list with descriptions. Key categories:
 | Compliance | `ENABLE_COMPLIANCE_MODE` |
 | Timezone | `TZ` |
 | Polling | `POLL_INTERVAL_MINUTES`, `MAX_DISPATCH_PER_CYCLE`, `BACKLOG_WARNING_THRESHOLD` |
-| Concurrency | `MAX_CONCURRENT_WORK`, `MAX_CONCURRENT_TRIAGE` |
+| Concurrency | `MAX_CONCURRENT_WORK`, `MAX_CONCURRENT_TRIAGE`, `MAX_WIP_PER_PROGRAM` |
 | Timeouts (triggers) | `TIMEOUT_ISSUE_TRIAGE`, `TIMEOUT_PR_REVIEW`, `TIMEOUT_IMPLEMENT`, `TIMEOUT_TEST_PR`, `TIMEOUT_WRITE_TESTS`, `TIMEOUT_RESEARCH` |
 | Timeouts (scheduled) | `TIMEOUT_DAILY_STANDUP`, `TIMEOUT_WEEKLY_PLANNING`, `TIMEOUT_MONTHLY_STRATEGY` |
 | Timeouts (tmux) | `TMUX_PERMISSIONS_TIMEOUT`, `TMUX_READINESS_TIMEOUT` |

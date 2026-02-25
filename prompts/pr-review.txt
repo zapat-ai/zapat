@@ -90,3 +90,6 @@ gh pr comment {{PR_NUMBER}} --repo {{REPO}} --body "YOUR_REVIEW_OUTPUT"
 ### Safety Notes
 - All teammates are read-only — no code changes, only review
 - Review the CHANGES, not the entire codebase. Don't flag existing patterns.
+- Do NOT create new GitHub issues for findings. Post security findings as blocking PR
+  review comments. The rework agent will address them. Only genuinely out-of-scope work
+  should become issues (with `agent-plan` label, never `agent-work`).

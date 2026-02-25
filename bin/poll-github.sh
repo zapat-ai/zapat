@@ -203,6 +203,116 @@ check_dependencies() {
     return 0
 }
 
+# --- Program WIP Limits ---
+# Limits how many sibling issues (from the same parent) can run concurrently.
+
+# Initialize (clear) the program cache at the start of each poll cycle.
+# Uses file-based caching — no associative arrays (bash 3.2 compatible).
+init_program_cache() {
+    rm -rf "$SCRIPT_DIR/state/program-cache"
+    mkdir -p "$SCRIPT_DIR/state/program-cache"
+}
+
+# Find the parent issue for a given issue number.
+# Checks: (1) issue body for "Part of #N" or "Parent: #N"
+#          (2) cached repo scan of <!-- zapat-sub-issues: X,Y,Z --> comments
+# Outputs parent issue number or empty string.
+find_parent_issue() {
+    local repo="$1"
+    local issue_num="$2"
+
+    # Sanitize repo for use as filename: owner/repo → owner_repo
+    local repo_slug
+    repo_slug=$(echo "$repo" | tr '/' '_')
+    local cache_dir="$SCRIPT_DIR/state/program-cache"
+
+    # Strategy 1: Check issue body for "Part of #N" or "Parent: #N"
+    local body
+    body=$(gh issue view "$issue_num" --repo "$repo" --json body --jq '.body // ""' 2>/dev/null || echo "")
+    local parent
+    parent=$(echo "$body" | grep -oE '(Part of|Parent:)\s*#[0-9]+' 2>/dev/null | head -1 | grep -oE '[0-9]+' || echo "")
+    if [[ -n "$parent" ]]; then
+        echo "$parent"
+        return 0
+    fi
+
+    # Strategy 2: Scan open issues for <!-- zapat-sub-issues: X,Y,Z --> (cached per repo per cycle)
+    local cache_file="${cache_dir}/${repo_slug}-sub-issues.txt"
+    if [[ ! -f "$cache_file" ]]; then
+        # Fetch all open issue bodies and extract sub-issue mappings
+        # Format: parent_num:child1,child2,child3
+        gh issue list --repo "$repo" --state open --json number,body --limit 100 2>/dev/null | \
+            jq -r '.[] | select(.body != null) | "\(.number):\(.body)"' 2>/dev/null | \
+            while IFS=: read -r pnum pbody; do
+                local subs
+                subs=$(echo "$pbody" | grep -oE '<!-- zapat-sub-issues: [0-9, ]+ -->' 2>/dev/null | \
+                    grep -oE '[0-9, ]+' | tr -d ' ' || echo "")
+                if [[ -n "$subs" ]]; then
+                    echo "${pnum}:${subs}"
+                fi
+            done > "$cache_file" 2>/dev/null || touch "$cache_file"
+    fi
+
+    # Search cache for this issue number as a child
+    while IFS=: read -r pnum children; do
+        [[ -z "$pnum" ]] && continue
+        # Check if issue_num is in the comma-separated children list
+        if echo ",$children," | grep -qF ",$issue_num,"; then
+            echo "$pnum"
+            return 0
+        fi
+    done < "$cache_file"
+
+    echo ""
+    return 0
+}
+
+# Check if starting this issue would exceed the per-program WIP limit.
+# Returns 0 if OK to start, 1 if WIP limit reached.
+check_wip_limit() {
+    local repo="$1"
+    local issue_num="$2"
+    local project="${3:-default}"
+
+    local max_wip="${MAX_WIP_PER_PROGRAM:-0}"
+    # 0 means disabled
+    [[ "$max_wip" -eq 0 ]] && return 0
+
+    local parent
+    parent=$(find_parent_issue "$repo" "$issue_num")
+    # No parent found — no program grouping, allow it
+    [[ -z "$parent" ]] && return 0
+
+    # Count running siblings: items in state/items/ with same repo + status=running + type=work
+    local running_count=0
+    local repo_slug
+    repo_slug=$(echo "$repo" | tr '/' '_')
+    local items_dir="$SCRIPT_DIR/state/items"
+    if [[ -d "$items_dir" ]]; then
+        for item_file in "$items_dir"/*"${repo_slug}"*work*.json; do
+            [[ -f "$item_file" ]] || continue
+            local item_status item_number
+            item_status=$(jq -r '.status // ""' "$item_file" 2>/dev/null)
+            item_number=$(jq -r '.number // ""' "$item_file" 2>/dev/null)
+            [[ "$item_status" != "running" ]] && continue
+            [[ "$item_number" == "$issue_num" ]] && continue
+            # Check if this running item is a sibling (same parent)
+            local sibling_parent
+            sibling_parent=$(find_parent_issue "$repo" "$item_number")
+            if [[ "$sibling_parent" == "$parent" ]]; then
+                running_count=$((running_count + 1))
+            fi
+        done
+    fi
+
+    if [[ "$running_count" -ge "$max_wip" ]]; then
+        log_info "WIP limit: $running_count/$max_wip siblings of parent #$parent already running in $repo"
+        return 1
+    fi
+
+    return 0
+}
+
 # --- @zapat Mention Scanning ---
 scan_mentions() {
     local repo="$1"
@@ -370,6 +480,9 @@ TOTAL_ISSUES=0
 TOTAL_ITEMS_FOUND=0
 DISPATCH_COUNT=0
 MAX_DISPATCH=${MAX_DISPATCH_PER_CYCLE:-20}
+
+# Initialize program WIP cache (cleared each poll cycle)
+init_program_cache
 BACKLOG_WARNING_THRESHOLD=${BACKLOG_WARNING_THRESHOLD:-30}
 
 # Check if we've hit the per-cycle dispatch cap
@@ -403,157 +516,13 @@ while IFS=$'\t' read -r repo local_path repo_type; do
         break
     fi
 
-    # --- PRs with agent label ---
-    PR_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "agent" --json number,title,labels,assignees,url --state open') || { RATE_LIMIT_LOW="hit"; continue; }
+    # === Scan Priority: Finish-Over-Start ===
+    # Items closest to completion are processed first:
+    #   1. Rework (90% done)  2. CI Fix  3. Testing  4. Visual Verify
+    #   5. Code Review  6. Human-Requested Review
+    #   7. Implementation (new work)  8. Triage  9. Write Tests  10. Research
 
-    PR_COUNT=$(echo "$PR_JSON" | jq 'length')
-    for ((i=0; i<PR_COUNT; i++)); do
-        PR_NUM=$(echo "$PR_JSON" | jq -r ".[$i].number")
-        PR_TITLE=$(echo "$PR_JSON" | jq -r ".[$i].title")
-        PR_LABELS=$(echo "$PR_JSON" | jq ".[$i].labels")
-        PR_ASSIGNEES=$(echo "$PR_JSON" | jq ".[$i].assignees")
-        PR_KEY="${repo}#${PR_NUM}"
-
-        # Skip if already processed (legacy file + item state)
-        if grep -qF "$PR_KEY" "$PROCESSED_PRS"; then
-            check_reopened_item "$PROCESSED_PRS" "$PR_KEY" "$repo" "pr" "$PR_NUM" "$project_slug" || continue
-        fi
-        if ! should_process_item "$repo" "pr" "$PR_NUM" "$project_slug"; then
-            continue
-        fi
-
-        # Governance checks
-        if ! should_process "$PR_LABELS" "$PR_ASSIGNEES"; then
-            log_info "Skipping PR $PR_KEY (governance: human-only or assigned)"
-            echo "$PR_KEY" >> "$PROCESSED_PRS"
-            continue
-        fi
-
-        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
-        dispatch_limit_reached && continue
-        log_info "Processing PR: $PR_KEY — $PR_TITLE (project: $project_slug)"
-        create_item_state "$repo" "pr" "$PR_NUM" "pending" "$project_slug" || true
-        "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$PR_NUM" "" "$project_slug" &
-        echo "$PR_KEY" >> "$PROCESSED_PRS"
-        TOTAL_PRS=$((TOTAL_PRS + 1))
-        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-    done
-
-    # --- PRs with zapat-review label (agent-created PRs needing review) ---
-    REVIEW_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-review" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
-
-    REVIEW_COUNT=$(echo "$REVIEW_JSON" | jq 'length')
-    for ((i=0; i<REVIEW_COUNT; i++)); do
-        REVIEW_NUM=$(echo "$REVIEW_JSON" | jq -r ".[$i].number")
-        REVIEW_TITLE=$(echo "$REVIEW_JSON" | jq -r ".[$i].title")
-        REVIEW_LABELS=$(echo "$REVIEW_JSON" | jq ".[$i].labels")
-        REVIEW_ASSIGNEES=$(echo "$REVIEW_JSON" | jq ".[$i].assignees")
-        REVIEW_KEY="${repo}#review-${REVIEW_NUM}"
-
-        # Skip if already processed
-        if grep -qF "$REVIEW_KEY" "$PROCESSED_PRS"; then
-            check_reopened_item "$PROCESSED_PRS" "$REVIEW_KEY" "$repo" "pr" "$REVIEW_NUM" "$project_slug" || continue
-        fi
-        if ! should_process_item "$repo" "pr" "$REVIEW_NUM" "$project_slug"; then
-            continue
-        fi
-
-        # Governance checks
-        if ! should_process "$REVIEW_LABELS" "$REVIEW_ASSIGNEES"; then
-            log_info "Skipping zapat-review $REVIEW_KEY (governance: human-only or assigned)"
-            echo "$REVIEW_KEY" >> "$PROCESSED_PRS"
-            continue
-        fi
-
-        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
-        dispatch_limit_reached && continue
-        log_info "Processing zapat-review: $REVIEW_KEY — $REVIEW_TITLE (project: $project_slug)"
-        create_item_state "$repo" "pr" "$REVIEW_NUM" "pending" "$project_slug" || true
-        "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$REVIEW_NUM" "" "$project_slug" &
-        echo "$REVIEW_KEY" >> "$PROCESSED_PRS"
-        TOTAL_PRS=$((TOTAL_PRS + 1))
-        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-    done
-
-    # --- Issues with agent label ---
-    ISSUE_JSON=$(gh_safe 'gh issue list --repo "'"$repo"'" --label "agent" --json number,title,labels,assignees,url --state open') || { RATE_LIMIT_LOW="hit"; continue; }
-
-    ISSUE_COUNT=$(echo "$ISSUE_JSON" | jq 'length')
-    for ((i=0; i<ISSUE_COUNT; i++)); do
-        ISSUE_NUM=$(echo "$ISSUE_JSON" | jq -r ".[$i].number")
-        ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r ".[$i].title")
-        ISSUE_LABELS=$(echo "$ISSUE_JSON" | jq ".[$i].labels")
-        ISSUE_ASSIGNEES=$(echo "$ISSUE_JSON" | jq ".[$i].assignees")
-        ISSUE_KEY="${repo}#${ISSUE_NUM}"
-
-        # Skip if already processed (legacy file + item state)
-        if grep -qF "$ISSUE_KEY" "$PROCESSED_ISSUES"; then
-            check_reopened_item "$PROCESSED_ISSUES" "$ISSUE_KEY" "$repo" "issue" "$ISSUE_NUM" "$project_slug" || continue
-        fi
-        if ! should_process_item "$repo" "issue" "$ISSUE_NUM" "$project_slug"; then
-            continue
-        fi
-
-        # Governance checks
-        if ! should_process "$ISSUE_LABELS" "$ISSUE_ASSIGNEES"; then
-            log_info "Skipping issue $ISSUE_KEY (governance: human-only or assigned)"
-            echo "$ISSUE_KEY" >> "$PROCESSED_ISSUES"
-            continue
-        fi
-
-        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
-        dispatch_limit_reached && continue
-        log_info "Processing issue: $ISSUE_KEY — $ISSUE_TITLE (project: $project_slug)"
-        create_item_state "$repo" "issue" "$ISSUE_NUM" "pending" "$project_slug" || true
-        "$SCRIPT_DIR/triggers/on-new-issue.sh" "$repo" "$ISSUE_NUM" "" "$project_slug" &
-        echo "$ISSUE_KEY" >> "$PROCESSED_ISSUES"
-        TOTAL_ISSUES=$((TOTAL_ISSUES + 1))
-        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-    done
-
-    # --- Issues with agent-work label (implementation) ---
-    WORK_JSON=$(gh_safe 'gh issue list --repo "'"$repo"'" --label "agent-work" --json number,title,labels,assignees,url --state open') || { RATE_LIMIT_LOW="hit"; continue; }
-
-    WORK_COUNT=$(echo "$WORK_JSON" | jq 'length')
-    for ((i=0; i<WORK_COUNT; i++)); do
-        WORK_NUM=$(echo "$WORK_JSON" | jq -r ".[$i].number")
-        WORK_TITLE=$(echo "$WORK_JSON" | jq -r ".[$i].title")
-        WORK_LABELS=$(echo "$WORK_JSON" | jq ".[$i].labels")
-        WORK_ASSIGNEES=$(echo "$WORK_JSON" | jq ".[$i].assignees")
-        WORK_KEY="${repo}#${WORK_NUM}"
-
-        # Skip if already processed (legacy file + item state)
-        if grep -qF "$WORK_KEY" "$PROCESSED_WORK"; then
-            check_reopened_item "$PROCESSED_WORK" "$WORK_KEY" "$repo" "work" "$WORK_NUM" "$project_slug" || continue
-        fi
-        if ! should_process_item "$repo" "work" "$WORK_NUM" "$project_slug"; then
-            continue
-        fi
-
-        # Governance checks
-        if ! should_process "$WORK_LABELS" "$WORK_ASSIGNEES"; then
-            log_info "Skipping agent-work $WORK_KEY (governance: human-only or assigned)"
-            echo "$WORK_KEY" >> "$PROCESSED_WORK"
-            continue
-        fi
-
-        # Dependency check — skip if blocked by open issues
-        if ! check_dependencies "$repo" "$WORK_NUM"; then
-            log_info "Deferring agent-work $WORK_KEY (blocked by open dependencies)"
-            continue
-        fi
-
-        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
-        dispatch_limit_reached && continue
-        log_info "Processing agent-work: $WORK_KEY — $WORK_TITLE (project: $project_slug)"
-        create_item_state "$repo" "work" "$WORK_NUM" "pending" "$project_slug" || true
-        "$SCRIPT_DIR/triggers/on-work-issue.sh" "$repo" "$WORK_NUM" "" "$project_slug" &
-        echo "$WORK_KEY" >> "$PROCESSED_WORK"
-        TOTAL_ISSUES=$((TOTAL_ISSUES + 1))
-        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-    done
-
-    # --- PRs with zapat-rework label (change requests) ---
+    # --- 1. PRs with zapat-rework label (change requests — 90% done, highest priority) ---
     REWORK_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-rework" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
 
     REWORK_COUNT=$(echo "$REWORK_JSON" | jq 'length')
@@ -589,79 +558,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
         DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
     done
 
-    # --- PRs with zapat-testing label (test runner) ---
-    TEST_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-testing" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
-
-    TEST_COUNT=$(echo "$TEST_JSON" | jq 'length')
-    for ((i=0; i<TEST_COUNT; i++)); do
-        TEST_NUM=$(echo "$TEST_JSON" | jq -r ".[$i].number")
-        TEST_TITLE=$(echo "$TEST_JSON" | jq -r ".[$i].title")
-        TEST_LABELS=$(echo "$TEST_JSON" | jq ".[$i].labels")
-        TEST_ASSIGNEES=$(echo "$TEST_JSON" | jq ".[$i].assignees")
-        TEST_KEY="${repo}#test-pr${TEST_NUM}"
-
-        # Skip if already processed (dedup file + item state)
-        if grep -qF "$TEST_KEY" "$PROCESSED_TESTING"; then
-            check_reopened_item "$PROCESSED_TESTING" "$TEST_KEY" "$repo" "test" "$TEST_NUM" "$project_slug" || continue
-        fi
-        if ! should_process_item "$repo" "test" "$TEST_NUM" "$project_slug"; then
-            continue
-        fi
-
-        if ! should_process "$TEST_LABELS" "$TEST_ASSIGNEES"; then
-            log_info "Skipping zapat-testing $TEST_KEY (governance: human-only or assigned)"
-            echo "$TEST_KEY" >> "$PROCESSED_TESTING"
-            continue
-        fi
-
-        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
-        dispatch_limit_reached && continue
-        log_info "Processing zapat-testing: $TEST_KEY — $TEST_TITLE (project: $project_slug)"
-        create_item_state "$repo" "test" "$TEST_NUM" "pending" "$project_slug" >/dev/null || true
-        "$SCRIPT_DIR/triggers/on-test-pr.sh" "$repo" "$TEST_NUM" "" "$project_slug" &
-        echo "$TEST_KEY" >> "$PROCESSED_TESTING"
-        TOTAL_PRS=$((TOTAL_PRS + 1))
-        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-    done
-
-    # --- PRs with zapat-visual label (visual verification) ---
-    if [[ "${VISUAL_VERIFY_ENABLED:-false}" == "true" ]]; then
-        VISUAL_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-visual" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
-
-        VISUAL_COUNT=$(echo "$VISUAL_JSON" | jq 'length')
-        for ((i=0; i<VISUAL_COUNT; i++)); do
-            VISUAL_NUM=$(echo "$VISUAL_JSON" | jq -r ".[$i].number")
-            VISUAL_TITLE=$(echo "$VISUAL_JSON" | jq -r ".[$i].title")
-            VISUAL_LABELS=$(echo "$VISUAL_JSON" | jq ".[$i].labels")
-            VISUAL_ASSIGNEES=$(echo "$VISUAL_JSON" | jq ".[$i].assignees")
-            VISUAL_KEY="${repo}#visual-pr${VISUAL_NUM}"
-
-            # Skip if already processed
-            if grep -qF "$VISUAL_KEY" "$PROCESSED_TESTING" 2>/dev/null; then
-                continue
-            fi
-            if ! should_process_item "$repo" "visual" "$VISUAL_NUM" "$project_slug"; then
-                continue
-            fi
-
-            if ! should_process "$VISUAL_LABELS" "$VISUAL_ASSIGNEES"; then
-                log_info "Skipping zapat-visual $VISUAL_KEY (governance: human-only or assigned)"
-                echo "$VISUAL_KEY" >> "$PROCESSED_TESTING"
-                continue
-            fi
-
-            TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
-            dispatch_limit_reached && continue
-            log_info "Processing zapat-visual: $VISUAL_KEY — $VISUAL_TITLE (project: $project_slug)"
-            create_item_state "$repo" "visual" "$VISUAL_NUM" "pending" "$project_slug" >/dev/null || true
-            "$SCRIPT_DIR/triggers/on-visual-verify.sh" "$repo" "$VISUAL_NUM" "" "$project_slug" &
-            echo "$VISUAL_KEY" >> "$PROCESSED_TESTING"
-            TOTAL_PRS=$((TOTAL_PRS + 1))
-            DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-        done
-    fi
-
-    # --- PRs with zapat-ci-fix label (CI auto-fix) ---
+    # --- 2. PRs with zapat-ci-fix label (CI auto-fix — fix failures on near-done PRs) ---
     if [[ "${CI_AUTOFIX_ENABLED:-false}" == "true" ]]; then
         CI_FIX_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-ci-fix" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
 
@@ -698,7 +595,235 @@ while IFS=$'\t' read -r repo local_path repo_type; do
         done
     fi
 
-    # --- Issues with agent-write-tests label (test writing) ---
+    # --- 3. PRs with zapat-testing label (test runner — verify near-done PRs) ---
+    TEST_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-testing" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
+
+    TEST_COUNT=$(echo "$TEST_JSON" | jq 'length')
+    for ((i=0; i<TEST_COUNT; i++)); do
+        TEST_NUM=$(echo "$TEST_JSON" | jq -r ".[$i].number")
+        TEST_TITLE=$(echo "$TEST_JSON" | jq -r ".[$i].title")
+        TEST_LABELS=$(echo "$TEST_JSON" | jq ".[$i].labels")
+        TEST_ASSIGNEES=$(echo "$TEST_JSON" | jq ".[$i].assignees")
+        TEST_KEY="${repo}#test-pr${TEST_NUM}"
+
+        # Skip if already processed (dedup file + item state)
+        if grep -qF "$TEST_KEY" "$PROCESSED_TESTING"; then
+            check_reopened_item "$PROCESSED_TESTING" "$TEST_KEY" "$repo" "test" "$TEST_NUM" "$project_slug" || continue
+        fi
+        if ! should_process_item "$repo" "test" "$TEST_NUM" "$project_slug"; then
+            continue
+        fi
+
+        if ! should_process "$TEST_LABELS" "$TEST_ASSIGNEES"; then
+            log_info "Skipping zapat-testing $TEST_KEY (governance: human-only or assigned)"
+            echo "$TEST_KEY" >> "$PROCESSED_TESTING"
+            continue
+        fi
+
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
+        dispatch_limit_reached && continue
+        log_info "Processing zapat-testing: $TEST_KEY — $TEST_TITLE (project: $project_slug)"
+        create_item_state "$repo" "test" "$TEST_NUM" "pending" "$project_slug" >/dev/null || true
+        "$SCRIPT_DIR/triggers/on-test-pr.sh" "$repo" "$TEST_NUM" "" "$project_slug" &
+        echo "$TEST_KEY" >> "$PROCESSED_TESTING"
+        TOTAL_PRS=$((TOTAL_PRS + 1))
+        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
+    done
+
+    # --- 4. PRs with zapat-visual label (visual verification — verify near-done PRs) ---
+    if [[ "${VISUAL_VERIFY_ENABLED:-false}" == "true" ]]; then
+        VISUAL_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-visual" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
+
+        VISUAL_COUNT=$(echo "$VISUAL_JSON" | jq 'length')
+        for ((i=0; i<VISUAL_COUNT; i++)); do
+            VISUAL_NUM=$(echo "$VISUAL_JSON" | jq -r ".[$i].number")
+            VISUAL_TITLE=$(echo "$VISUAL_JSON" | jq -r ".[$i].title")
+            VISUAL_LABELS=$(echo "$VISUAL_JSON" | jq ".[$i].labels")
+            VISUAL_ASSIGNEES=$(echo "$VISUAL_JSON" | jq ".[$i].assignees")
+            VISUAL_KEY="${repo}#visual-pr${VISUAL_NUM}"
+
+            # Skip if already processed
+            if grep -qF "$VISUAL_KEY" "$PROCESSED_TESTING" 2>/dev/null; then
+                continue
+            fi
+            if ! should_process_item "$repo" "visual" "$VISUAL_NUM" "$project_slug"; then
+                continue
+            fi
+
+            if ! should_process "$VISUAL_LABELS" "$VISUAL_ASSIGNEES"; then
+                log_info "Skipping zapat-visual $VISUAL_KEY (governance: human-only or assigned)"
+                echo "$VISUAL_KEY" >> "$PROCESSED_TESTING"
+                continue
+            fi
+
+            TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
+            dispatch_limit_reached && continue
+            log_info "Processing zapat-visual: $VISUAL_KEY — $VISUAL_TITLE (project: $project_slug)"
+            create_item_state "$repo" "visual" "$VISUAL_NUM" "pending" "$project_slug" >/dev/null || true
+            "$SCRIPT_DIR/triggers/on-visual-verify.sh" "$repo" "$VISUAL_NUM" "" "$project_slug" &
+            echo "$VISUAL_KEY" >> "$PROCESSED_TESTING"
+            TOTAL_PRS=$((TOTAL_PRS + 1))
+            DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
+        done
+    fi
+
+    # --- 5. PRs with zapat-review label (agent-created PRs needing review) ---
+    REVIEW_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "zapat-review" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
+
+    REVIEW_COUNT=$(echo "$REVIEW_JSON" | jq 'length')
+    for ((i=0; i<REVIEW_COUNT; i++)); do
+        REVIEW_NUM=$(echo "$REVIEW_JSON" | jq -r ".[$i].number")
+        REVIEW_TITLE=$(echo "$REVIEW_JSON" | jq -r ".[$i].title")
+        REVIEW_LABELS=$(echo "$REVIEW_JSON" | jq ".[$i].labels")
+        REVIEW_ASSIGNEES=$(echo "$REVIEW_JSON" | jq ".[$i].assignees")
+        REVIEW_KEY="${repo}#review-${REVIEW_NUM}"
+
+        # Skip if already processed
+        if grep -qF "$REVIEW_KEY" "$PROCESSED_PRS"; then
+            check_reopened_item "$PROCESSED_PRS" "$REVIEW_KEY" "$repo" "pr" "$REVIEW_NUM" "$project_slug" || continue
+        fi
+        if ! should_process_item "$repo" "pr" "$REVIEW_NUM" "$project_slug"; then
+            continue
+        fi
+
+        # Governance checks
+        if ! should_process "$REVIEW_LABELS" "$REVIEW_ASSIGNEES"; then
+            log_info "Skipping zapat-review $REVIEW_KEY (governance: human-only or assigned)"
+            echo "$REVIEW_KEY" >> "$PROCESSED_PRS"
+            continue
+        fi
+
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
+        dispatch_limit_reached && continue
+        log_info "Processing zapat-review: $REVIEW_KEY — $REVIEW_TITLE (project: $project_slug)"
+        create_item_state "$repo" "pr" "$REVIEW_NUM" "pending" "$project_slug" || true
+        "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$REVIEW_NUM" "" "$project_slug" &
+        echo "$REVIEW_KEY" >> "$PROCESSED_PRS"
+        TOTAL_PRS=$((TOTAL_PRS + 1))
+        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
+    done
+
+    # --- 6. PRs with agent label (human-requested reviews) ---
+    PR_JSON=$(gh_safe 'gh pr list --repo "'"$repo"'" --label "agent" --json number,title,labels,assignees,url --state open') || { RATE_LIMIT_LOW="hit"; continue; }
+
+    PR_COUNT=$(echo "$PR_JSON" | jq 'length')
+    for ((i=0; i<PR_COUNT; i++)); do
+        PR_NUM=$(echo "$PR_JSON" | jq -r ".[$i].number")
+        PR_TITLE=$(echo "$PR_JSON" | jq -r ".[$i].title")
+        PR_LABELS=$(echo "$PR_JSON" | jq ".[$i].labels")
+        PR_ASSIGNEES=$(echo "$PR_JSON" | jq ".[$i].assignees")
+        PR_KEY="${repo}#${PR_NUM}"
+
+        # Skip if already processed (legacy file + item state)
+        if grep -qF "$PR_KEY" "$PROCESSED_PRS"; then
+            check_reopened_item "$PROCESSED_PRS" "$PR_KEY" "$repo" "pr" "$PR_NUM" "$project_slug" || continue
+        fi
+        if ! should_process_item "$repo" "pr" "$PR_NUM" "$project_slug"; then
+            continue
+        fi
+
+        # Governance checks
+        if ! should_process "$PR_LABELS" "$PR_ASSIGNEES"; then
+            log_info "Skipping PR $PR_KEY (governance: human-only or assigned)"
+            echo "$PR_KEY" >> "$PROCESSED_PRS"
+            continue
+        fi
+
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
+        dispatch_limit_reached && continue
+        log_info "Processing PR: $PR_KEY — $PR_TITLE (project: $project_slug)"
+        create_item_state "$repo" "pr" "$PR_NUM" "pending" "$project_slug" || true
+        "$SCRIPT_DIR/triggers/on-new-pr.sh" "$repo" "$PR_NUM" "" "$project_slug" &
+        echo "$PR_KEY" >> "$PROCESSED_PRS"
+        TOTAL_PRS=$((TOTAL_PRS + 1))
+        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
+    done
+
+    # --- 7. Issues with agent-work label (implementation — new work, only after finishing existing) ---
+    WORK_JSON=$(gh_safe 'gh issue list --repo "'"$repo"'" --label "agent-work" --json number,title,labels,assignees,url --state open') || { RATE_LIMIT_LOW="hit"; continue; }
+
+    WORK_COUNT=$(echo "$WORK_JSON" | jq 'length')
+    for ((i=0; i<WORK_COUNT; i++)); do
+        WORK_NUM=$(echo "$WORK_JSON" | jq -r ".[$i].number")
+        WORK_TITLE=$(echo "$WORK_JSON" | jq -r ".[$i].title")
+        WORK_LABELS=$(echo "$WORK_JSON" | jq ".[$i].labels")
+        WORK_ASSIGNEES=$(echo "$WORK_JSON" | jq ".[$i].assignees")
+        WORK_KEY="${repo}#${WORK_NUM}"
+
+        # Skip if already processed (legacy file + item state)
+        if grep -qF "$WORK_KEY" "$PROCESSED_WORK"; then
+            check_reopened_item "$PROCESSED_WORK" "$WORK_KEY" "$repo" "work" "$WORK_NUM" "$project_slug" || continue
+        fi
+        if ! should_process_item "$repo" "work" "$WORK_NUM" "$project_slug"; then
+            continue
+        fi
+
+        # Governance checks
+        if ! should_process "$WORK_LABELS" "$WORK_ASSIGNEES"; then
+            log_info "Skipping agent-work $WORK_KEY (governance: human-only or assigned)"
+            echo "$WORK_KEY" >> "$PROCESSED_WORK"
+            continue
+        fi
+
+        # Dependency check — skip if blocked by open issues
+        if ! check_dependencies "$repo" "$WORK_NUM"; then
+            log_info "Deferring agent-work $WORK_KEY (blocked by open dependencies)"
+            continue
+        fi
+
+        # WIP limit check — skip if too many siblings are already running
+        if ! check_wip_limit "$repo" "$WORK_NUM" "$project_slug"; then
+            log_info "Deferring agent-work $WORK_KEY (program WIP limit reached)"
+            continue
+        fi
+
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
+        dispatch_limit_reached && continue
+        log_info "Processing agent-work: $WORK_KEY — $WORK_TITLE (project: $project_slug)"
+        create_item_state "$repo" "work" "$WORK_NUM" "pending" "$project_slug" || true
+        "$SCRIPT_DIR/triggers/on-work-issue.sh" "$repo" "$WORK_NUM" "" "$project_slug" &
+        echo "$WORK_KEY" >> "$PROCESSED_WORK"
+        TOTAL_ISSUES=$((TOTAL_ISSUES + 1))
+        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
+    done
+
+    # --- 8. Issues with agent label (triage — assess new issues) ---
+    ISSUE_JSON=$(gh_safe 'gh issue list --repo "'"$repo"'" --label "agent" --json number,title,labels,assignees,url --state open') || { RATE_LIMIT_LOW="hit"; continue; }
+
+    ISSUE_COUNT=$(echo "$ISSUE_JSON" | jq 'length')
+    for ((i=0; i<ISSUE_COUNT; i++)); do
+        ISSUE_NUM=$(echo "$ISSUE_JSON" | jq -r ".[$i].number")
+        ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r ".[$i].title")
+        ISSUE_LABELS=$(echo "$ISSUE_JSON" | jq ".[$i].labels")
+        ISSUE_ASSIGNEES=$(echo "$ISSUE_JSON" | jq ".[$i].assignees")
+        ISSUE_KEY="${repo}#${ISSUE_NUM}"
+
+        # Skip if already processed (legacy file + item state)
+        if grep -qF "$ISSUE_KEY" "$PROCESSED_ISSUES"; then
+            check_reopened_item "$PROCESSED_ISSUES" "$ISSUE_KEY" "$repo" "issue" "$ISSUE_NUM" "$project_slug" || continue
+        fi
+        if ! should_process_item "$repo" "issue" "$ISSUE_NUM" "$project_slug"; then
+            continue
+        fi
+
+        # Governance checks
+        if ! should_process "$ISSUE_LABELS" "$ISSUE_ASSIGNEES"; then
+            log_info "Skipping issue $ISSUE_KEY (governance: human-only or assigned)"
+            echo "$ISSUE_KEY" >> "$PROCESSED_ISSUES"
+            continue
+        fi
+
+        TOTAL_ITEMS_FOUND=$((TOTAL_ITEMS_FOUND + 1))
+        dispatch_limit_reached && continue
+        log_info "Processing issue: $ISSUE_KEY — $ISSUE_TITLE (project: $project_slug)"
+        create_item_state "$repo" "issue" "$ISSUE_NUM" "pending" "$project_slug" || true
+        "$SCRIPT_DIR/triggers/on-new-issue.sh" "$repo" "$ISSUE_NUM" "" "$project_slug" &
+        echo "$ISSUE_KEY" >> "$PROCESSED_ISSUES"
+        TOTAL_ISSUES=$((TOTAL_ISSUES + 1))
+        DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
+    done
+
+    # --- 9. Issues with agent-write-tests label (test writing — lower priority new work) ---
     WRITE_TESTS_JSON=$(gh_safe 'gh issue list --repo "'"$repo"'" --label "agent-write-tests" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
 
     WRITE_TESTS_COUNT=$(echo "$WRITE_TESTS_JSON" | jq 'length')
@@ -734,7 +859,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
         DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
     done
 
-    # --- Issues with agent-research label (strategy/research) ---
+    # --- 10. Issues with agent-research label (research — lowest priority) ---
     RESEARCH_JSON=$(gh_safe 'gh issue list --repo "'"$repo"'" --label "agent-research" --json number,title,labels,assignees --state open') || { RATE_LIMIT_LOW="hit"; continue; }
 
     RESEARCH_COUNT=$(echo "$RESEARCH_JSON" | jq 'length')
@@ -776,7 +901,7 @@ while IFS=$'\t' read -r repo local_path repo_type; do
     # --- Auto-Triage: Pick up ALL new issues without labels ---
     if [[ "${AUTO_TRIAGE_NEW_ISSUES:-false}" == "true" ]]; then
         # All Zapat-managed labels — issues with any of these are already handled above
-        ZAPAT_LABELS="agent,agent-work,agent-research,agent-write-tests,human-only,zapat-triaging,zapat-implementing,zapat-review,zapat-testing,zapat-rework,zapat-researching"
+        ZAPAT_LABELS="agent,agent-work,agent-research,agent-write-tests,agent-plan,agent-phase-2,agent-phase-3,human-only,zapat-triaging,zapat-implementing,zapat-review,zapat-testing,zapat-rework,zapat-researching"
 
         ALL_ISSUES_JSON=$(gh_safe 'gh issue list --repo "'"$repo"'" --state open --json number,title,labels,assignees --limit 50') || { RATE_LIMIT_LOW="hit"; continue; }
 
