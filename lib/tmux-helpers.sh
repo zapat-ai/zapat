@@ -208,6 +208,9 @@ check_pane_health() {
 
     panes=$(tmux list-panes -t "${TMUX_SESSION}:${window}" -F '#{pane_index}' 2>/dev/null) || return 0
 
+    # Ensure hash cache is initialized
+    _pane_hash_ensure
+
     # Batch counters for notification aggregation
     local rate_limit_panes=""
     local permission_panes=""
@@ -224,10 +227,10 @@ check_pane_health() {
 
         # Fast-path: check if pane is actively working (spinner or content changing)
         local fast_result cur_hash
-        fast_result=$(_pane_is_active "${window}.${pane_idx}" "${_PANE_HASH_CACHE[$pane_id]:-}")
+        fast_result=$(_pane_is_active "${window}.${pane_idx}" "$(_pane_hash_get "$pane_id")")
         cur_hash=$(echo "$fast_result" | tail -1)
         fast_result=$(echo "$fast_result" | head -1)
-        _PANE_HASH_CACHE[$pane_id]="$cur_hash"
+        _pane_hash_set "$pane_id" "$cur_hash"
 
         if [[ "$fast_result" == "active" ]]; then
             # Pane is clearly working — skip Haiku call
@@ -323,8 +326,43 @@ check_pane_health() {
     fi
 }
 
-# Associative array for pane content hash caching (fast-path optimization)
-declare -A _PANE_HASH_CACHE
+# File-based pane content hash cache (fast-path optimization)
+# Uses temp files instead of associative arrays for bash 3.2 compatibility (macOS)
+_PANE_HASH_CACHE_DIR=""
+
+_pane_hash_get() {
+    local key="$1"
+    local safe_key="${key//[^a-zA-Z0-9_-]/_}"
+    [[ -n "$_PANE_HASH_CACHE_DIR" && -f "$_PANE_HASH_CACHE_DIR/$safe_key" ]] && cat "$_PANE_HASH_CACHE_DIR/$safe_key" || echo ""
+}
+
+_pane_hash_set() {
+    local key="$1" value="$2"
+    local safe_key="${key//[^a-zA-Z0-9_-]/_}"
+    if [[ -n "$_PANE_HASH_CACHE_DIR" ]]; then
+        echo "$value" > "$_PANE_HASH_CACHE_DIR/$safe_key"
+    fi
+}
+
+_pane_hash_reset() {
+    if [[ -n "$_PANE_HASH_CACHE_DIR" ]]; then
+        rm -rf "$_PANE_HASH_CACHE_DIR"
+    fi
+    _PANE_HASH_CACHE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/zapat-pane-hash.XXXXXX")
+}
+
+_pane_hash_cleanup() {
+    if [[ -n "$_PANE_HASH_CACHE_DIR" ]]; then
+        rm -rf "$_PANE_HASH_CACHE_DIR"
+        _PANE_HASH_CACHE_DIR=""
+    fi
+}
+
+_pane_hash_ensure() {
+    if [[ -z "$_PANE_HASH_CACHE_DIR" || ! -d "$_PANE_HASH_CACHE_DIR" ]]; then
+        _pane_hash_reset
+    fi
+}
 
 # Monitor a Claude session with timeout and LLM-driven health checks
 # Usage: monitor_session "window-name" timeout_seconds [check_interval] [job_name] [job_context]
@@ -343,8 +381,9 @@ monitor_session() {
     # Clean up any stale signal file from a previous run
     rm -f "$signal_file"
 
-    # Reset pane hash cache for this session
-    _PANE_HASH_CACHE=()
+    # Reset pane hash cache for this session; clean up on exit
+    _pane_hash_reset
+    trap '_pane_hash_cleanup' RETURN
 
     # Clean up stale throttle files older than 10 minutes from previous sessions
     local throttle_dir="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-health-throttle"
