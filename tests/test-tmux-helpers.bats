@@ -182,147 +182,41 @@ teardown() {
     assert [ "$perm_timeout" -eq 90 ]
 }
 
-# --- Permission pattern tests ---
-# Load actual patterns from tmux-helpers.sh for testing
+# --- Pane analysis tests ---
+# Note: Pattern-based pane detection was replaced by LLM-driven analysis
+# (lib/pane-analyzer.sh) which uses Haiku to interpret pane content.
+# The old PANE_PATTERN_* regex constants were removed in favor of context-aware
+# analysis that understands dialog UIs natively. See lib/pane-analyzer.sh.
 
-_load_permission_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_PERMISSION=$(grep '^PANE_PATTERN_PERMISSION=' "$src" | sed 's/^PANE_PATTERN_PERMISSION=//' | tr -d '"')
+@test "pane analyzer script exists and is executable" {
+    local analyzer="${BATS_TEST_DIRNAME}/../bin/analyze-pane.sh"
+    assert [ -f "$analyzer" ]
+    assert [ -x "$analyzer" ]
 }
 
-_load_rate_limit_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_RATE_LIMIT=$(grep '^PANE_PATTERN_RATE_LIMIT=' "$src" | sed 's/^PANE_PATTERN_RATE_LIMIT=//' | tr -d '"')
+@test "pane analyzer library exists" {
+    local lib="${BATS_TEST_DIRNAME}/../lib/pane-analyzer.sh"
+    assert [ -f "$lib" ]
 }
 
-_load_account_limit_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_ACCOUNT_LIMIT=$(grep '^PANE_PATTERN_ACCOUNT_LIMIT=' "$src" | sed 's/^PANE_PATTERN_ACCOUNT_LIMIT=//' | tr -d '"')
+@test "pane analyzer library defines analyze_pane function" {
+    grep -q 'analyze_pane()' "${BATS_TEST_DIRNAME}/../lib/pane-analyzer.sh"
 }
 
-_load_fatal_pattern() {
-    local src="${BATS_TEST_DIRNAME}/../lib/tmux-helpers.sh"
-    PANE_PATTERN_FATAL=$(grep '^PANE_PATTERN_FATAL=' "$src" | sed 's/^PANE_PATTERN_FATAL=//' | tr -d '"')
+@test "pane analyzer library defines act_on_pane function" {
+    grep -q 'act_on_pane()' "${BATS_TEST_DIRNAME}/../lib/pane-analyzer.sh"
 }
 
-# -- Motivation: the OLD broad pattern caused false positives --
-# The original regex (Allow|Deny|permission|Do you want to|approve this) matched
-# status bar text like "bypass permissions on" and IAM policy snippets, causing
-# spurious auto-resolves that interrupted working agents. See issue #9.
-
-@test "OLD broad pattern WOULD false-positive on 'bypass permissions on'" {
-    local OLD_PATTERN="(Allow|Deny|permission|Do you want to|approve this)"
-    echo "bypass permissions on" | grep -qE "$OLD_PATTERN"
+@test "pane analyzer library defines _pane_is_active fast-path function" {
+    grep -q '_pane_is_active()' "${BATS_TEST_DIRNAME}/../lib/pane-analyzer.sh"
 }
 
-@test "OLD broad pattern WOULD false-positive on 'Allow s3:GetObject'" {
-    local OLD_PATTERN="(Allow|Deny|permission|Do you want to|approve this)"
-    echo "Allow s3:GetObject" | grep -qE "$OLD_PATTERN"
-}
-
-@test "OLD broad pattern WOULD false-positive on 'Deny access to IAM role'" {
-    local OLD_PATTERN="(Allow|Deny|permission|Do you want to|approve this)"
-    echo "Deny access to IAM role" | grep -qE "$OLD_PATTERN"
-}
-
-# -- True positives: real Claude CLI permission prompts --
-
-@test "permission pattern matches 'Allow once'" {
-    _load_permission_pattern
-    echo "  Allow once  " | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern matches 'Allow always'" {
-    _load_permission_pattern
-    echo "  Allow always  " | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern matches 'Do you want to allow'" {
-    _load_permission_pattern
-    echo "Do you want to allow this tool to run?" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern matches 'wants to use the Bash tool'" {
-    _load_permission_pattern
-    echo "Claude wants to use the Bash tool" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern matches 'wants to use the Read tool'" {
-    _load_permission_pattern
-    echo "Claude wants to use the Read tool" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern matches 'wants to use the Write tool'" {
-    _load_permission_pattern
-    echo "Claude wants to use the Write tool" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern matches 'approve this action'" {
-    _load_permission_pattern
-    echo "Do you approve this action?" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-# -- False positives: status bar and code review text that must NOT match --
-
-@test "permission pattern does NOT match 'bypass permissions on'" {
-    _load_permission_pattern
-    ! echo "bypass permissions on" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match bare 'Allow'" {
-    _load_permission_pattern
-    ! echo "Allow" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match bare 'Deny'" {
-    _load_permission_pattern
-    ! echo "Deny" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match bare 'permission'" {
-    _load_permission_pattern
-    ! echo "permission" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match 'Do you want to proceed'" {
-    _load_permission_pattern
-    ! echo "Do you want to proceed?" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match IAM Allow/Deny policy text" {
-    _load_permission_pattern
-    ! echo '{"Effect": "Allow", "Action": "s3:GetObject"}' | grep -qE "$PANE_PATTERN_PERMISSION"
-    ! echo '{"Effect": "Deny", "Action": "s3:*"}' | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match 'AllowUsers' SSH config" {
-    _load_permission_pattern
-    ! echo "AllowUsers admin deploy" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match 'DenyGroups' SSH config" {
-    _load_permission_pattern
-    ! echo "DenyGroups nogroup" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match status bar with permissions mode" {
-    _load_permission_pattern
-    ! echo "> claude --dangerously-skip-permissions  bypass permissions on  auto-compact" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match code review mentioning permissions" {
-    _load_permission_pattern
-    ! echo "This PR updates the file permissions for the deploy script" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match 'Deny access to IAM role'" {
-    _load_permission_pattern
-    ! echo "Deny access to IAM role" | grep -qE "$PANE_PATTERN_PERMISSION"
-}
-
-@test "permission pattern does NOT match 'Allow s3:GetObject'" {
-    _load_permission_pattern
-    ! echo "Allow s3:GetObject" | grep -qE "$PANE_PATTERN_PERMISSION"
+@test "pane analyzer allowlist contains expected keys" {
+    local lib="${BATS_TEST_DIRNAME}/../lib/pane-analyzer.sh"
+    grep -q 'Enter' "$lib"
+    grep -q 'Down' "$lib"
+    grep -q 'Escape' "$lib"
+    grep -q 'C-c' "$lib"
 }
 
 # --- Signal file path tests ---
@@ -413,127 +307,11 @@ _load_fatal_pattern() {
     assert [ -f "$throttle_dir/fresh-pane--rate_limit" ]
 }
 
-# --- Rate limit pattern tests ---
-
-@test "rate limit pattern matches 'Switch to extra'" {
-    _load_rate_limit_pattern
-    echo "Switch to extra usage" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-@test "rate limit pattern matches 'Rate limit'" {
-    _load_rate_limit_pattern
-    echo "Rate limit exceeded" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-@test "rate limit pattern matches 'rate_limit'" {
-    _load_rate_limit_pattern
-    echo "error: rate_limit" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-@test "rate limit pattern matches '429'" {
-    _load_rate_limit_pattern
-    echo "HTTP 429 error" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-@test "rate limit pattern matches 'Too Many Requests'" {
-    _load_rate_limit_pattern
-    echo "Too Many Requests" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-@test "rate limit pattern matches 'Retry after'" {
-    _load_rate_limit_pattern
-    echo "Retry after 30 seconds" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-@test "rate limit pattern does NOT match normal output" {
-    _load_rate_limit_pattern
-    ! echo "Switching branches to main" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-@test "rate limit pattern does NOT match 'retry logic'" {
-    _load_rate_limit_pattern
-    ! echo "Added retry logic for API calls" | grep -qE "$PANE_PATTERN_RATE_LIMIT"
-}
-
-# --- Account limit pattern tests ---
-
-@test "account limit pattern matches 'out of extra usage'" {
-    _load_account_limit_pattern
-    echo "You are out of extra usage" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
-}
-
-@test "account limit pattern matches 'usage limit'" {
-    _load_account_limit_pattern
-    echo "You have reached your usage limit" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
-}
-
-@test "account limit pattern matches 'plan limit'" {
-    _load_account_limit_pattern
-    echo "plan limit reached" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
-}
-
-@test "account limit pattern matches 'You've reached'" {
-    _load_account_limit_pattern
-    echo "You've reached your monthly cap" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
-}
-
-@test "account limit pattern matches 'resets' with digit" {
-    _load_account_limit_pattern
-    echo "Usage resets 5 hours from now" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
-}
-
-@test "account limit pattern does NOT match normal output" {
-    _load_account_limit_pattern
-    ! echo "The deployment plan is ready" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"
-}
-
-# --- Fatal error pattern tests ---
-
-@test "fatal pattern matches 'FATAL'" {
-    _load_fatal_pattern
-    echo "FATAL: unable to allocate memory" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern matches 'OOM'" {
-    _load_fatal_pattern
-    echo "OOM killer invoked" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern matches 'out of memory'" {
-    _load_fatal_pattern
-    echo "error: out of memory" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern matches 'Segmentation fault'" {
-    _load_fatal_pattern
-    echo "Segmentation fault (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern matches 'core dumped'" {
-    _load_fatal_pattern
-    echo "Aborted (core dumped)" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern matches 'panic:'" {
-    _load_fatal_pattern
-    echo "panic: runtime error" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern matches 'SIGKILL'" {
-    _load_fatal_pattern
-    echo "Process received SIGKILL" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern does NOT match normal error messages" {
-    _load_fatal_pattern
-    ! echo "Error: file not found" | grep -qE "$PANE_PATTERN_FATAL"
-}
-
-@test "fatal pattern does NOT match 'panic button' in docs" {
-    _load_fatal_pattern
-    # 'panic:' requires the colon, so 'panic button' won't match
-    ! echo "Don't hit the panic button" | grep -qE "$PANE_PATTERN_FATAL"
-}
+# --- Pattern tests removed ---
+# Rate limit, account limit, and fatal error pattern tests were removed
+# because regex-based detection was replaced by LLM-driven pane analysis.
+# The pane analyzer (lib/pane-analyzer.sh) uses Haiku to classify pane states
+# with full context awareness, eliminating false positives from regex matching.
 
 # --- Idle detection tests ---
 # The idle detection in monitor_session must require BOTH:

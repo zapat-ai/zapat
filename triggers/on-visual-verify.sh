@@ -170,12 +170,13 @@ else
 fi
 START_TIME=$(date +%s)
 
-launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "${CLAUDE_SUBAGENT_MODEL:-claude-sonnet-4-6}"
+JOB_CONTEXT="visual verification of PR #${PR_NUMBER} (${PR_TITLE}) in ${REPO}"
+launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "${CLAUDE_SUBAGENT_MODEL:-claude-sonnet-4-6}" "$JOB_CONTEXT"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_VISUAL_VERIFY:-600}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "visual-${REPO##*/}#${PR_NUMBER}"
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "visual-${REPO##*/}#${PR_NUMBER}" "$JOB_CONTEXT"
 monitor_exit=$?
 
 if [[ $monitor_exit -eq 2 ]]; then

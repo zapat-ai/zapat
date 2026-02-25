@@ -392,30 +392,34 @@ export function getHealthChecks(_project?: string): HealthCheck[] {
     checks.push({ name: 'failed-items', status: 'ok', message: 'No items directory' })
   }
 
-  // Check stuck panes (tmux calls use 5s TTL — need to be reasonably fresh)
+  // Check stuck panes using LLM-driven pane analyzer
   const TMUX_TTL = 5000
   const tmuxSessionExists = checks.some(c => c.name === 'tmux-session' && c.status === 'ok')
   if (tmuxSessionExists) {
     const windowsOutput = cachedExec('tmux list-windows -t zapat -F "#{window_name}" 2>/dev/null', TMUX_TTL)
     if (windowsOutput) {
       const windows = windowsOutput.split('\n').filter(Boolean)
-      let stuckPanes: string[] = []
-      const ratePattern = /Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after/
-      const permPattern = /Allow once|Allow always|Do you want to (create|make|proceed|run|write|edit|allow)/
-      const fatalPattern = /FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL/
+      const stuckPanes: string[] = []
+      const analyzerScript = join(getAutomationDir(), 'bin', 'analyze-pane.sh')
 
       for (const win of windows) {
+        if (win === 'control' || win === 'bash') continue
         const panesOutput = cachedExec(`tmux list-panes -t "zapat:${win}" -F "#{pane_index}" 2>/dev/null`, TMUX_TTL)
         if (!panesOutput) continue
         for (const paneIdx of panesOutput.split('\n').filter(Boolean)) {
-          const content = cachedExec(`tmux capture-pane -t "zapat:${win}.${paneIdx}" -p 2>/dev/null`, TMUX_TTL)
-          if (!content) continue
-          if (ratePattern.test(content)) {
-            stuckPanes.push(`${win}.${paneIdx}: rate limit`)
-          } else if (permPattern.test(content)) {
-            stuckPanes.push(`${win}.${paneIdx}: permission prompt`)
-          } else if (fatalPattern.test(content)) {
-            stuckPanes.push(`${win}.${paneIdx}: fatal error`)
+          const paneId = `${win}.${paneIdx}`
+          // Use analyzer with short cache — health dashboard refreshes every 30s
+          const raw = cachedExec(`"${analyzerScript}" "${paneId}" "monitoring" "health check" 2>/dev/null`, TMUX_TTL)
+          if (!raw) continue
+          try {
+            const result = JSON.parse(raw)
+            const state = result.state || ''
+            if (state === 'rate_limit') stuckPanes.push(`${paneId}: rate limit`)
+            else if (state === 'permission_prompt') stuckPanes.push(`${paneId}: permission prompt`)
+            else if (state === 'account_limit') stuckPanes.push(`${paneId}: account limit`)
+            else if (state === 'fatal') stuckPanes.push(`${paneId}: fatal error`)
+          } catch {
+            // Non-JSON response — skip
           }
         }
       }

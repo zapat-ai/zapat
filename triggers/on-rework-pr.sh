@@ -178,12 +178,13 @@ else
     TMUX_WINDOW="rework-${REPO##*/}-pr-${PR_NUMBER}"
 fi
 
-launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE"
+JOB_CONTEXT="reworking PR #${PR_NUMBER} (${PR_TITLE}) in ${REPO}"
+launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "" "$JOB_CONTEXT"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_IMPLEMENT:-1800}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "rework-${REPO##*/}#${PR_NUMBER}"
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "rework-${REPO##*/}#${PR_NUMBER}" "$JOB_CONTEXT"
 monitor_exit=$?
 
 if [[ $monitor_exit -eq 2 ]]; then

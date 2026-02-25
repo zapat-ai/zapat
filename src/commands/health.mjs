@@ -129,11 +129,7 @@ function checkOrphanedWindows(autoFix) {
 }
 
 function checkStuckPanes(autoFix) {
-  // Patterns mirrored from lib/tmux-helpers.sh PANE_PATTERN_* constants
-  const PATTERN_PERMISSION = /Allow once|Allow always|Do you want to allow|Do you want to (create|make|proceed|run|write|edit)|wants to use the .* tool|approve this action|Waiting for team lead approval/;
-  const PATTERN_RATE_LIMIT = /Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after/;
-  const PATTERN_ACCOUNT_LIMIT = /out of extra usage|resets [0-9]|usage limit|plan limit|You've reached/;
-  const PATTERN_FATAL = /FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL/;
+  const analyzerScript = join(getAutomationDir(), 'bin', 'analyze-pane.sh');
 
   const paneList = exec('tmux list-panes -a -t zapat -F "#{window_name}.#{pane_index}" 2>/dev/null');
   if (!paneList) {
@@ -148,17 +144,27 @@ function checkStuckPanes(autoFix) {
     const windowName = paneId.split('.')[0];
     if (windowName === 'bash' || windowName === 'control') continue;
 
-    const content = exec(`tmux capture-pane -t "zapat:${paneId}" -p -l 50 2>/dev/null`);
-    if (!content) continue;
+    // Use LLM-driven pane analyzer
+    const raw = exec(`"${analyzerScript}" "${paneId}" "monitoring" "health check" 2>/dev/null`);
+    if (!raw) continue;
 
-    let issue = null;
-    if (PATTERN_PERMISSION.test(content)) issue = 'permission prompt';
-    else if (PATTERN_RATE_LIMIT.test(content)) issue = 'rate limit';
-    else if (PATTERN_ACCOUNT_LIMIT.test(content)) issue = 'account limit';
-    else if (PATTERN_FATAL.test(content)) issue = 'fatal error';
+    try {
+      const result = JSON.parse(raw);
+      const state = result.state || '';
+      const reason = result.reason || '';
 
-    if (issue) {
-      stuck.push({ paneId, issue });
+      // Map analyzer states to issue types
+      let issue = null;
+      if (state === 'permission_prompt') issue = 'permission prompt';
+      else if (state === 'rate_limit') issue = 'rate limit';
+      else if (state === 'account_limit') issue = 'account limit';
+      else if (state === 'fatal') issue = 'fatal error';
+
+      if (issue) {
+        stuck.push({ paneId, issue, reason });
+      }
+    } catch {
+      // Analyzer returned non-JSON — skip this pane
     }
   }
 

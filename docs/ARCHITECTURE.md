@@ -106,7 +106,8 @@ All triggers follow the same lifecycle: source libs → load env → create item
 |------|---------|-------------|
 | `common.sh` | Foundation library (~1013 lines). Environment, logging, multi-project, repos, concurrency, agent config, prompt substitution, complexity classification. | `load_env()`, `read_repos()`, `acquire_slot()`, `release_slot()`, `substitute_prompt()`, `classify_complexity()`, `generate_task_assessment()`, `launch_claude_session()` (delegated to tmux-helpers), `set_project()`, `read_projects()` |
 | `item-state.sh` | JSON-file state machine for work item lifecycle (~318 lines). | `create_item_state()`, `update_item_state()`, `get_item_state()`, `should_process_item()`, `reset_completed_item()`, `increment_rework_cycles()`, `get_rework_cycles()`, `list_retryable_items()` |
-| `tmux-helpers.sh` | Reliable tmux session management (~398 lines). Pane health monitoring, idle detection, rate limit handling. | `launch_claude_session()`, `monitor_session()`, `check_pane_health()`, `wait_for_tmux_content()` |
+| `tmux-helpers.sh` | Reliable tmux session management. LLM-driven pane health monitoring, idle detection, rate limit handling. Sources `pane-analyzer.sh`. | `launch_claude_session()`, `monitor_session()`, `check_pane_health()`, `wait_for_tmux_content()` |
+| `pane-analyzer.sh` | LLM-driven pane interaction. Uses Haiku to interpret tmux pane content and decide keystrokes. Replaces brittle regex patterns with context-aware analysis. | `analyze_pane()`, `act_on_pane()`, `_pane_is_active()` |
 
 ### `prompts/` — Prompt Templates
 

@@ -117,12 +117,13 @@ else
     TMUX_WINDOW="research-${REPO##*/}-${ISSUE_NUMBER}"
 fi
 
-launch_claude_session "$TMUX_WINDOW" "$EFFECTIVE_PATH" "$PROMPT_FILE"
+JOB_CONTEXT="researching issue #${ISSUE_NUMBER} (${ISSUE_TITLE}) in ${REPO}"
+launch_claude_session "$TMUX_WINDOW" "$EFFECTIVE_PATH" "$PROMPT_FILE" "" "" "$JOB_CONTEXT"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_RESEARCH:-1800}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "research-${REPO##*/}#${ISSUE_NUMBER}"
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "research-${REPO##*/}#${ISSUE_NUMBER}" "$JOB_CONTEXT"
 monitor_exit=$?
 
 if [[ $monitor_exit -eq 2 ]]; then

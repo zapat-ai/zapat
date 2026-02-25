@@ -155,12 +155,13 @@ else
     TMUX_WINDOW="review-${REPO##*/}-pr-${PR_NUMBER}"
 fi
 
-launch_claude_session "$TMUX_WINDOW" "$EFFECTIVE_PATH" "$PROMPT_FILE"
+JOB_CONTEXT="reviewing PR #${PR_NUMBER} (${PR_TITLE}) in ${REPO}"
+launch_claude_session "$TMUX_WINDOW" "$EFFECTIVE_PATH" "$PROMPT_FILE" "" "" "$JOB_CONTEXT"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_PR_REVIEW:-600}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 15 "pr-review-${REPO##*/}#${PR_NUMBER}"
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 15 "pr-review-${REPO##*/}#${PR_NUMBER}" "$JOB_CONTEXT"
 monitor_exit=$?
 
 if [[ $monitor_exit -eq 2 ]]; then

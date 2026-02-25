@@ -172,12 +172,13 @@ else
 fi
 START_TIME=$(date +%s)
 
-launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "${CLAUDE_UTILITY_MODEL:-claude-haiku-4-5-20251001}"
+JOB_CONTEXT="fixing CI for PR #${PR_NUMBER} (${PR_TITLE}) in ${REPO}"
+launch_claude_session "$TMUX_WINDOW" "$WORKTREE_DIR" "$PROMPT_FILE" "" "${CLAUDE_UTILITY_MODEL:-claude-haiku-4-5-20251001}" "$JOB_CONTEXT"
 rm -f "$PROMPT_FILE"
 
 # --- Monitor with Timeout ---
 TIMEOUT=${TIMEOUT_TEST_PR:-1200}
-monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "ci-fix-${REPO##*/}#${PR_NUMBER}"
+monitor_session "$TMUX_WINDOW" "$TIMEOUT" 30 "ci-fix-${REPO##*/}#${PR_NUMBER}" "$JOB_CONTEXT"
 monitor_exit=$?
 
 if [[ $monitor_exit -eq 2 ]]; then

@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
 # Zapat - tmux Helper Functions
-# Provides reliable tmux interaction with readiness detection.
+# Provides reliable tmux interaction with LLM-driven pane analysis.
 # Source this file: source "$SCRIPT_DIR/lib/tmux-helpers.sh"
 
 TMUX_SESSION="${TMUX_SESSION:-zapat}"
 
-# Patterns for detecting stuck panes
-# Permission pattern uses exact Claude CLI prompt phrases to avoid false positives
-# from code review output (IAM policies, etc.).
-# Note: PANE_PATTERN_BYPASS removed — defaultMode:bypassPermissions in settings.json
-# means no startup bypass prompt appears. "shift+tab to cycle" now appears in every
-# running session's status bar and must NOT be used as a match pattern.
-PANE_PATTERN_ACCOUNT_LIMIT="(out of extra usage|resets [0-9]|usage limit|plan limit|You've reached)"
-PANE_PATTERN_RATE_LIMIT="(Switch to extra|Rate limit|rate_limit|429|Too Many Requests|Retry after)"
-PANE_PATTERN_PERMISSION="(Allow once|Allow always|Do you want to allow|Do you want to (create|make|run|write|edit)|wants to use the .* tool|approve this action|Waiting for team lead approval)"
-PANE_PATTERN_FATAL="(FATAL|OOM|out of memory|Segmentation fault|core dumped|panic:|SIGKILL)"
+# Source pane analyzer (LLM-driven pane interaction)
+# shellcheck source=lib/pane-analyzer.sh
+source "$(dirname "${BASH_SOURCE[0]}")/pane-analyzer.sh"
 
 # Wait for specific content to appear in a tmux pane
 # Usage: wait_for_tmux_content "window-name" "pattern" [timeout_seconds]
@@ -40,8 +33,8 @@ wait_for_tmux_content() {
     return 1
 }
 
-# Launch a Claude session in a tmux window with readiness detection
-# Usage: launch_claude_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars] [agent_model]
+# Launch a Claude session in a tmux window with LLM-driven startup navigation
+# Usage: launch_claude_session "window-name" "/path/to/workdir" "/path/to/prompt-file" [extra_env_vars] [agent_model] [job_context]
 # Returns: 0 if session launched and prompt submitted, 1 on failure
 launch_claude_session() {
     local window="$1"
@@ -49,6 +42,7 @@ launch_claude_session() {
     local prompt_file="$3"
     local extra_env="${4:-}"
     local model="${5:-${CLAUDE_MODEL:-claude-opus-4-6}}"
+    local job_context="${6:-unknown job}"
 
     # Validate inputs
     if [[ ! -d "$workdir" ]]; then
@@ -78,7 +72,7 @@ launch_claude_session() {
 
     # Create new tmux window
     tmux new-window -t "$TMUX_SESSION" -n "$window" "$cmd"
-    log_info "tmux window '$window' created"
+    log_info "tmux window '$window' created (job: ${job_context})"
 
     # Verify the window is still alive after a brief delay.
     # tmux destroys command-bearing windows when the process exits, so if
@@ -89,69 +83,84 @@ launch_claude_session() {
         return 1
     fi
 
-    if [[ "${TMUX_USE_SLEEP_FALLBACK:-0}" == "1" ]]; then
-        # Legacy fallback: hardcoded sleeps
-        log_info "Using sleep fallback for tmux interaction"
-        sleep 5
-        # The trust dialog defaults to "Yes, I trust this folder" (option 1).
-        # Just press Enter to confirm — do NOT send Down (that selects "No, exit").
-        tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
-        sleep 5
-        tmux load-buffer "$prompt_file"
-        tmux paste-buffer -t "${TMUX_SESSION}:${window}"
-        sleep 2
-        tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
-        return 0
-    fi
-
     # Dynamic timeout scaling based on system load
     local active_windows
     active_windows=$(tmux list-windows -t "$TMUX_SESSION" 2>/dev/null | wc -l | tr -d ' ')
     local scale_factor=1
     if [[ $active_windows -gt 5 ]]; then
-        # Scale timeout: each 10 extra windows adds 1x more time
         scale_factor=$(( 1 + active_windows / 10 ))
     fi
-    local perm_timeout=$(( ${TMUX_PERMISSIONS_TIMEOUT:-30} * scale_factor ))
-    local ready_timeout=$(( ${TMUX_READINESS_TIMEOUT:-30} * scale_factor ))
+    local startup_timeout=$(( ${TMUX_STARTUP_TIMEOUT:-90} * scale_factor ))
 
-    # Step 1: Check if a --dangerously-skip-permissions confirmation dialog appears.
-    # Claude Code v2.1.49+ skips this dialog and starts directly in bypass mode.
-    # Older versions show a "Do you trust the files" prompt requiring Down+Enter.
-    local perm_content
-    if wait_for_tmux_content "$window" "(Yes|trust|skip permissions|dangerously|bypass permissions on|❯)" "$perm_timeout"; then
-        perm_content=$(tmux capture-pane -pt "${TMUX_SESSION}:${window}" -S -20 2>/dev/null)
-        if echo "$perm_content" | grep -qE "(bypass permissions on|❯)"; then
-            # Already in bypass mode — no confirmation dialog, skip Step 2
-            log_info "Session started directly in bypass mode (no confirmation dialog needed)"
-        else
-            # Trust dialog detected — "Yes, I trust this folder" is already selected.
-            # Just press Enter to confirm (Down would select "No, exit").
-            log_info "Trust/permissions dialog detected, accepting..."
-            tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
+    # LLM-driven startup loop: poll pane every 3s, ask Haiku what to do
+    local startup_start
+    startup_start=$(date +%s)
+    local poll_interval=3
+
+    log_info "Starting LLM-driven startup navigation (timeout: ${startup_timeout}s, job: ${job_context})"
+
+    while true; do
+        local elapsed=$(( $(date +%s) - startup_start ))
+        if [[ $elapsed -gt $startup_timeout ]]; then
+            log_error "Startup timed out after ${startup_timeout}s for window '$window'"
+            tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
+            return 1
         fi
-    else
-        # Timed out waiting — check if already in bypass mode before sending keys
-        perm_content=$(tmux capture-pane -pt "${TMUX_SESSION}:${window}" -S -20 2>/dev/null)
-        if echo "$perm_content" | grep -qE "bypass permissions on"; then
-            log_info "Session already in bypass mode (confirmation dialog not needed)"
-        else
-            log_warn "Permissions prompt not detected and not in bypass mode, trying confirmation anyway..."
-            tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
+
+        # Check window still alive
+        if ! tmux list-windows -t "$TMUX_SESSION" -F '#{window_name}' 2>/dev/null | grep -qF "$window"; then
+            log_error "Window '$window' died during startup"
+            return 1
         fi
-    fi
 
-    # Step 3: Wait for Claude to be ready (look for the input prompt indicator)
-    if ! wait_for_tmux_content "$window" "(>|Claude|Type|message|\\$)" "$ready_timeout"; then
-        log_warn "Claude prompt not detected, trying anyway..."
-        sleep 5
-    fi
+        local state
+        state=$(act_on_pane "$window" "startup" "$job_context")
 
-    # Step 4: Paste the prompt
+        case "$state" in
+            ready|idle)
+                log_info "Session ready in window '$window' (${elapsed}s elapsed)"
+                break
+                ;;
+            trust_dialog|permission_prompt)
+                # act_on_pane already sent the keys, continue polling
+                ;;
+            rate_limit)
+                # act_on_pane already sent keys to accept alternate model
+                ;;
+            account_limit)
+                log_error "Account limit hit during startup for window '$window'"
+                tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
+                return 1
+                ;;
+            fatal)
+                log_error "Fatal error during startup for window '$window'"
+                tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
+                return 1
+                ;;
+            working|loading)
+                # Still starting up, no action needed
+                ;;
+            error)
+                # Haiku call failed — fall back to a simple wait-and-retry
+                log_warn "Pane analyzer error, waiting..."
+                ;;
+            unknown)
+                # Unknown dialog captured to logs, continue polling
+                log_warn "Unknown pane state in window '$window', continuing..."
+                ;;
+            *)
+                log_warn "Unexpected pane state '${state}' in window '$window'"
+                ;;
+        esac
+
+        sleep "$poll_interval"
+    done
+
+    # Paste the prompt
     tmux load-buffer "$prompt_file"
     tmux paste-buffer -t "${TMUX_SESSION}:${window}"
 
-    # Step 5: Wait briefly for paste to complete, then submit
+    # Wait briefly for paste to complete, then submit
     sleep 2
     tmux send-keys -t "${TMUX_SESSION}:${window}" Enter
 
@@ -186,12 +195,14 @@ _pane_health_should_notify() {
     return 0
 }
 
-# Check all panes in a tmux window for stuck prompts and auto-resolve them.
+# Check all panes in a tmux window for stuck prompts using LLM-driven analysis.
+# Uses fast-path optimization: only calls Haiku when pane appears stuck.
 # Collects issues across all panes and sends a single batched Slack notification.
-# Usage: check_pane_health "window-name" "job_name"
+# Usage: check_pane_health "window-name" "job_name" [job_context]
 check_pane_health() {
     local window="$1"
     local job_name="${2:-monitor}"
+    local job_context="${3:-${job_name}}"
     local auto_resolve="${AUTO_RESOLVE_PROMPTS:-true}"
     local panes
 
@@ -201,95 +212,99 @@ check_pane_health() {
     local rate_limit_panes=""
     local permission_panes=""
     local fatal_panes=""
+    local account_limit_panes=""
     local fatal_snippets=""
     local rate_limit_count=0
     local permission_count=0
     local fatal_count=0
+    local account_limit_count=0
 
     for pane_idx in $panes; do
-        local content
-        content=$(tmux capture-pane -t "${TMUX_SESSION}:${window}.${pane_idx}" -p 2>/dev/null) || continue
-
         local pane_id="${window}.${pane_idx}"
 
-        # Priority 0: Account-level rate limit (unrecoverable in-place)
-        if echo "$content" | grep -qE "$PANE_PATTERN_ACCOUNT_LIMIT"; then
-            _log_structured "error" "Account-level rate limit detected in pane ${pane_id}" \
-                "\"type\":\"pane_health\",\"issue\":\"account_rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+        # Fast-path: check if pane is actively working (spinner or content changing)
+        local fast_result cur_hash
+        fast_result=$(_pane_is_active "${window}.${pane_idx}" "${_PANE_HASH_CACHE[$pane_id]:-}")
+        cur_hash=$(echo "$fast_result" | tail -1)
+        fast_result=$(echo "$fast_result" | head -1)
+        _PANE_HASH_CACHE[$pane_id]="$cur_hash"
 
-            # Signal monitor_session to tear down this session
-            local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
-            mkdir -p "$(dirname "$signal_file")"
-            echo "rate_limited" > "$signal_file"
-
-            if _pane_health_should_notify "$pane_id" "account_rate_limit"; then
-                "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
-                    --slack \
-                    --message "Account rate limit hit in pane ${pane_id} (job: ${job_name}). Session will be paused and retried later." \
-                    --job-name "pane-health" \
-                    --status failure 2>/dev/null || log_warn "Pane health Slack notification failed"
-            fi
+        if [[ "$fast_result" == "active" ]]; then
+            # Pane is clearly working — skip Haiku call
             continue
         fi
 
-        # Priority 1: Rate limit prompt (model switch — recoverable)
-        if echo "$content" | grep -qE "$PANE_PATTERN_RATE_LIMIT"; then
-            _log_structured "warn" "Rate limit detected in pane ${pane_id}" \
-                "\"type\":\"pane_health\",\"issue\":\"rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+        # Pane might be stuck — ask Haiku
+        local state
+        state=$(act_on_pane "${window}.${pane_idx}" "monitoring" "$job_context")
 
-            if [[ "$auto_resolve" == "true" ]]; then
-                tmux send-keys -t "${TMUX_SESSION}:${window}.${pane_idx}" Down Enter
-                log_info "Auto-resolved rate limit prompt in pane ${pane_id}"
-            fi
+        case "$state" in
+            working|loading)
+                # Haiku says it's fine
+                ;;
+            account_limit)
+                _log_structured "error" "Account-level rate limit detected in pane ${pane_id}" \
+                    "\"type\":\"pane_health\",\"issue\":\"account_rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
 
-            rate_limit_count=$((rate_limit_count + 1))
-            rate_limit_panes="${rate_limit_panes:+${rate_limit_panes}, }${pane_id}"
-            continue
-        fi
+                # Signal monitor_session to tear down this session
+                local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
+                mkdir -p "$(dirname "$signal_file")"
+                echo "rate_limited" > "$signal_file"
 
-        # Priority 2: Permission prompt
-        # Note: "Waiting for team lead approval" prompts CANNOT be auto-resolved by
-        # pressing Enter — they require the lead agent to send an approval message.
-        # Detection here is for monitoring/alerting only (Slack notifications).
-        # Fix: ensure leads pass `mode: "bypassPermissions"` when spawning teammates.
-        if echo "$content" | grep -qE "$PANE_PATTERN_PERMISSION"; then
-            _log_structured "warn" "Permission prompt detected in pane ${pane_id}" \
-                "\"type\":\"pane_health\",\"issue\":\"permission\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+                account_limit_count=$((account_limit_count + 1))
+                account_limit_panes="${account_limit_panes:+${account_limit_panes}, }${pane_id}"
 
-            if [[ "$auto_resolve" == "true" ]]; then
-                tmux send-keys -t "${TMUX_SESSION}:${window}.${pane_idx}" Enter
-                log_info "Auto-resolved permission prompt in pane ${pane_id}"
-            fi
+                if _pane_health_should_notify "$pane_id" "account_rate_limit"; then
+                    "${AUTOMATION_DIR:-$SCRIPT_DIR}/bin/notify.sh" \
+                        --slack \
+                        --message "Account rate limit hit in pane ${pane_id} (job: ${job_name}). Session will be paused and retried later." \
+                        --job-name "pane-health" \
+                        --status failure 2>/dev/null || log_warn "Pane health Slack notification failed"
+                fi
+                ;;
+            rate_limit)
+                _log_structured "warn" "Rate limit detected in pane ${pane_id}" \
+                    "\"type\":\"pane_health\",\"issue\":\"rate_limit\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+                # act_on_pane already sent keys if auto_resolve is handled by Haiku
+                rate_limit_count=$((rate_limit_count + 1))
+                rate_limit_panes="${rate_limit_panes:+${rate_limit_panes}, }${pane_id}"
+                ;;
+            permission_prompt)
+                _log_structured "warn" "Permission prompt detected in pane ${pane_id}" \
+                    "\"type\":\"pane_health\",\"issue\":\"permission\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
+                # act_on_pane already sent Enter
+                permission_count=$((permission_count + 1))
+                permission_panes="${permission_panes:+${permission_panes}, }${pane_id}"
+                ;;
+            fatal)
+                local error_snippet
+                error_snippet=$(tmux capture-pane -t "${TMUX_SESSION}:${window}.${pane_idx}" -p -S -5 2>/dev/null | tail -3)
 
-            permission_count=$((permission_count + 1))
-            permission_panes="${permission_panes:+${permission_panes}, }${pane_id}"
-            continue
-        fi
+                _log_structured "error" "Fatal error detected in pane ${pane_id}" \
+                    "\"type\":\"pane_health\",\"issue\":\"fatal\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
 
-        # Priority 3: Fatal error (no auto-resolve)
-        if echo "$content" | grep -qE "$PANE_PATTERN_FATAL"; then
-            local error_snippet
-            error_snippet=$(echo "$content" | grep -E "$PANE_PATTERN_FATAL" | tail -3)
-
-            _log_structured "error" "Fatal error detected in pane ${pane_id}" \
-                "\"type\":\"pane_health\",\"issue\":\"fatal\",\"pane\":\"${pane_id}\",\"job\":\"${job_name}\""
-
-            fatal_count=$((fatal_count + 1))
-            fatal_panes="${fatal_panes:+${fatal_panes}, }${pane_id}"
-            fatal_snippets="${fatal_snippets:+${fatal_snippets}\n---\n}[${pane_id}] ${error_snippet}"
-            continue
-        fi
+                fatal_count=$((fatal_count + 1))
+                fatal_panes="${fatal_panes:+${fatal_panes}, }${pane_id}"
+                fatal_snippets="${fatal_snippets:+${fatal_snippets}\n---\n}[${pane_id}] ${error_snippet}"
+                ;;
+            *)
+                # ready, idle, unknown, error — no health issue to report
+                ;;
+        esac
     done
 
     # Send one batched notification if any issues were found
-    local total_issues=$((rate_limit_count + permission_count + fatal_count))
+    local total_issues=$((rate_limit_count + permission_count + fatal_count + account_limit_count))
     if [[ $total_issues -gt 0 ]] && _pane_health_should_notify "batch-summary" "${job_name}"; then
         local message="Pane health summary for ${window} (job: ${job_name}):"
+        if [[ $account_limit_count -gt 0 ]]; then
+            message="${message}\n• Account limit: ${account_limit_count} pane(s) [${account_limit_panes}]"
+        fi
         if [[ $rate_limit_count -gt 0 ]]; then
-            message="${message}\n• Rate limit: ${rate_limit_count} pane(s) [${rate_limit_panes}] (auto-resolve: ${auto_resolve})"
+            message="${message}\n• Rate limit: ${rate_limit_count} pane(s) [${rate_limit_panes}] (auto-resolved)"
         fi
         if [[ $permission_count -gt 0 ]]; then
-            message="${message}\n• Permission: ${permission_count} pane(s) [${permission_panes}] (auto-resolve: ${auto_resolve})"
+            message="${message}\n• Permission: ${permission_count} pane(s) [${permission_panes}] (auto-resolved)"
         fi
         if [[ $fatal_count -gt 0 ]]; then
             message="${message}\n• FATAL: ${fatal_count} pane(s) [${fatal_panes}]\n\`\`\`\n${fatal_snippets}\n\`\`\`"
@@ -308,14 +323,18 @@ check_pane_health() {
     fi
 }
 
-# Monitor a Claude session with timeout
-# Usage: monitor_session "window-name" timeout_seconds [check_interval] [job_name]
+# Associative array for pane content hash caching (fast-path optimization)
+declare -A _PANE_HASH_CACHE
+
+# Monitor a Claude session with timeout and LLM-driven health checks
+# Usage: monitor_session "window-name" timeout_seconds [check_interval] [job_name] [job_context]
 # Returns: 0 if session ended normally, 1 if timed out, 2 if account rate limited
 monitor_session() {
     local window="$1"
     local timeout="$2"
     local interval="${3:-15}"
     local job_name="${4:-monitor}"
+    local job_context="${5:-${job_name}}"
     local signal_file="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-signals/signal-${window}"
     mkdir -p "$(dirname "$signal_file")"
     local start
@@ -324,18 +343,22 @@ monitor_session() {
     # Clean up any stale signal file from a previous run
     rm -f "$signal_file"
 
+    # Reset pane hash cache for this session
+    _PANE_HASH_CACHE=()
+
     # Clean up stale throttle files older than 10 minutes from previous sessions
     local throttle_dir="${AUTOMATION_DIR:-$SCRIPT_DIR}/state/pane-health-throttle"
     if [[ -d "$throttle_dir" ]]; then
         find "$throttle_dir" -type f -mmin +10 -delete 2>/dev/null || true
     fi
 
-    log_info "Monitoring session '$window' (timeout: ${timeout}s)"
+    log_info "Monitoring session '$window' (timeout: ${timeout}s, job: ${job_context})"
 
-    # Idle detection: count consecutive checks where Claude is at the ❯ prompt
-    # with no active spinner. After 2 consecutive idle checks, send /exit.
+    # Idle detection: count consecutive checks where Claude appears idle.
+    # After 2 consecutive idle checks, kill the window.
     local idle_checks=0
     local idle_threshold=2
+    local prev_content_hash=""
 
     while tmux list-windows -t "$TMUX_SESSION" -F '#{window_name}' 2>/dev/null | grep -qF "$window"; do
         local elapsed=$(( $(date +%s) - start ))
@@ -353,17 +376,17 @@ monitor_session() {
             rm -f "$signal_file"
             return 1
         fi
-        check_pane_health "$window" "$job_name"
+
+        # Run health check with LLM analysis on sub-panes
+        check_pane_health "$window" "$job_name" "$job_context"
 
         # Check for account-level rate limit signal
         if [[ -f "$signal_file" ]] && [[ "$(cat "$signal_file" 2>/dev/null)" == "rate_limited" ]]; then
             log_warn "Account rate limit signal detected for session '$window' — tearing down"
-            # Graceful shutdown
             tmux send-keys -t "${TMUX_SESSION}:${window}" C-c
             sleep 3
             tmux send-keys -t "${TMUX_SESSION}:${window}" "/exit" Enter
             sleep 5
-            # Force kill if still alive
             if tmux list-windows -t "$TMUX_SESSION" -F '#{window_name}' 2>/dev/null | grep -qF "$window"; then
                 tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
             fi
@@ -371,29 +394,47 @@ monitor_session() {
             return 2
         fi
 
-        # Idle detection: Claude finished and is sitting at the ❯ prompt.
-        # The idle pattern is: cost line (✻) followed by separator (───) and
-        # the input prompt (❯), with no active spinner visible.
-        # IMPORTANT: We also require the cost line (✻) to be present, which
-        # proves Claude actually processed a prompt. Without it, the session
-        # is still in its initial startup state and hasn't done any work yet.
-        local tail_content
-        tail_content=$(tmux capture-pane -t "${TMUX_SESSION}:${window}" -p -S -5 2>/dev/null || echo "")
-        if echo "$tail_content" | grep -qE "^❯" && echo "$tail_content" | grep -qE "✻" && ! echo "$tail_content" | grep -qE "(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Working|Thinking)"; then
-            idle_checks=$((idle_checks + 1))
-            if [[ $idle_checks -ge $idle_threshold ]]; then
-                log_info "Session '$window' idle at prompt for $idle_checks checks — killing window"
-                # Kill directly — /exit via send-keys is unreliable (races with
-                # the command picker menu). The session is idle, nothing to save.
-                tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
-                rm -f "$signal_file"
-                log_info "Session '$window' terminated after idle detection"
-                return 0
-            fi
+        # Idle detection via fast-path check on main pane
+        local fast_result cur_hash
+        fast_result=$(_pane_is_active "$window" "$prev_content_hash")
+        cur_hash=$(echo "$fast_result" | tail -1)
+        fast_result=$(echo "$fast_result" | head -1)
+
+        if [[ "$fast_result" == "check" ]]; then
+            # Content unchanged and no spinner — might be idle, ask Haiku
+            local state
+            state=$(act_on_pane "$window" "monitoring" "$job_context")
+
+            case "$state" in
+                idle|ready)
+                    idle_checks=$((idle_checks + 1))
+                    if [[ $idle_checks -ge $idle_threshold ]]; then
+                        log_info "Session '$window' idle at prompt for $idle_checks checks — killing window"
+                        tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
+                        rm -f "$signal_file"
+                        log_info "Session '$window' terminated after idle detection"
+                        return 0
+                    fi
+                    ;;
+                account_limit)
+                    log_warn "Account rate limit detected in main pane of '$window' — tearing down"
+                    tmux send-keys -t "${TMUX_SESSION}:${window}" C-c
+                    sleep 3
+                    tmux kill-window -t "${TMUX_SESSION}:${window}" 2>/dev/null || true
+                    rm -f "$signal_file"
+                    return 2
+                    ;;
+                *)
+                    # working, rate_limit (handled), permission_prompt (handled), etc.
+                    idle_checks=0
+                    ;;
+            esac
         else
+            # Pane is active — reset idle counter
             idle_checks=0
         fi
 
+        prev_content_hash="$cur_hash"
         sleep "$interval"
     done
 
