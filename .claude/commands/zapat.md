@@ -239,7 +239,84 @@ Show the generated `config/project-context.txt` and ask: "Does this look right? 
 
 ---
 
-## Step 3 — Auto-Merge
+## Step 3 — Agent Team
+
+Based on the repos collected in Step 2, propose repo-type-aware agent specializations. The goal is to match each repo type with the best-fit agent persona.
+
+### Show default team
+
+Present:
+```
+Your default agent team (8 roles):
+  builder:    engineer (general-purpose)
+  security:   security-reviewer
+  product:    product-manager
+  ux:         ux-reviewer
+  qa:         qa-engineer
+  devops:     devops-engineer
+  docs:       technical-writer
+  program:    program-manager (delivery sequencing, WIP limits, phase gates)
+```
+
+### Propose specializations
+
+For each repo type detected in Step 2, propose a specialization. Only propose for types that have a natural specialist:
+
+- **ios** → "I noticed you have an iOS repo. Would you like a specialized iOS/SwiftUI engineer (`ios-engineer`) for iOS work instead of the generic engineer?"
+- **web** → "I noticed you have a web repo. Would you like a specialized fullstack engineer (`fullstack-engineer`) for web work?"
+- **extension** → "I noticed you have a Chrome extension repo. Would you like a specialized extension engineer (`chrome-extension-emr`) for extension work?"
+- **backend** → "I noticed you have a backend repo. Would you like a specialized backend engineer (`backend-engineer`) for backend work?"
+
+Ask about all detected types in a single question (multi-select style). For types not listed above (e.g., "other"), skip.
+
+### Domain compliance
+
+Ask: **"Does your project have domain-specific compliance needs?"**
+
+Offer common options:
+- Healthcare (HIPAA) → adds `compliance=hipaa-compliance` and optionally `security.ios=hipaa-security-consultant` etc.
+- Finance (SOX/PCI) → adds `compliance=finance-compliance`
+- None / I'll configure later
+
+### Generate overrides
+
+For each accepted specialization:
+
+1. Write the `role.type=persona` line to `agents.conf`. For example, if the user accepts iOS specialization:
+   ```
+   builder.ios=ios-engineer
+   ```
+
+2. Check if the persona file exists in `agents/`. If not, create a minimal template:
+   ```markdown
+   # <Persona Name>
+
+   You are a specialized <description> agent for the Zapat pipeline.
+
+   ## Expertise
+   - <domain-specific expertise>
+
+   ## Guidelines
+   - Follow the project's coding standards
+   - Write tests for new functionality
+   - Consider security implications
+   ```
+
+3. Copy any new persona files to `~/.claude/agents/`.
+
+### Confirmation
+
+Show the final agent team configuration:
+```
+Agent team configured:
+  Default:     engineer, security-reviewer, product-manager, ux-reviewer, qa-engineer, devops-engineer, technical-writer, program-manager
+  iOS repos:   ios-engineer (builder), hipaa-security-consultant (security)
+  Web repos:   fullstack-engineer (builder)
+```
+
+---
+
+## Step 4 — Auto-Merge
 
 Ask: **"Should Zapat auto-merge PRs that pass code review and tests?"**
 
@@ -250,7 +327,7 @@ Explain: "When enabled, low-risk PRs merge immediately and medium-risk PRs merge
 
 ---
 
-## Step 4 — Review Defaults and Generate
+## Step 5 — Review Defaults and Generate
 
 Before generating configuration, show the user all defaults that will be applied and give them a chance to change any.
 
@@ -261,7 +338,9 @@ Present this summary:
 ```
 Here's how Zapat will be configured. Let me know if you'd like to change anything:
 
-  Model:              Opus 4.6 (best quality)
+  Lead model:         Opus 4.6 (team leads / orchestrators)
+  Sub-agent model:    Opus 4.6 (reviewers, analysts)
+  Utility model:      Haiku 4.5 (standups, simple tasks)
   Auto-triage:        enabled (every issue triaged; "human-only" label opts out)
   Auto-merge risk:    medium max (high-risk PRs need human approval)
   Merge delay:        4 hours for medium-risk PRs
@@ -269,9 +348,17 @@ Here's how Zapat will be configured. Let me know if you'd like to change anythin
   Polling interval:   every 2 minutes
   Timezone:           <auto-detected>
   Notifications:      none (add Slack webhook later in .env)
-  Agent team:         engineer, security, product, ux
+  Agent team:         engineer, security, product, ux, qa, devops, docs, program (8 roles)
+  Agent overrides:    <list any repo-type overrides from Step 3, or "none">
+  @zapat mentions:    enabled
+  WIP per program:    3 (max concurrent siblings from same parent issue)
+  Scan priority:      finish-over-start (rework → CI fix → testing → review → new work)
+  Phased execution:   research creates agent-plan (human approves → agent-work)
   Scheduled tasks:    daily standup, weekly planning, weekly security scan
-  Budget caps:        $5 standup / $15 planning / $25 strategy / $15 security
+  Labels:             agent, agent-work, agent-plan, agent-phase-2, agent-phase-3, agent-research,
+                      agent-write-tests, hold, human-only, agent-full-review, codex, claude
+                      + classification: feature, bug, tech-debt, security, research
+                      + priority: P0, P1, P2, P3
 ```
 
 Then ask: **"Look good, or would you like to change anything?"**
@@ -284,7 +371,9 @@ If the user wants changes, let them describe what to change in natural language 
 
 | Setting | Default |
 |---------|---------|
-| `CLAUDE_MODEL` | `claude-opus-4-6` |
+| `CLAUDE_MODEL` | `claude-opus-4-6` (lead model — team leads / orchestrators) |
+| `CLAUDE_SUBAGENT_MODEL` | `claude-opus-4-6` (sub-agent model — reviewers, analysts) |
+| `CLAUDE_UTILITY_MODEL` | `claude-haiku-4-5-20251001` (utility model — standups, simple tasks) |
 | `AUTO_TRIAGE_NEW_ISSUES` | `true` |
 | `AUTO_MERGE_MAX_RISK` | `medium` |
 | `AUTO_MERGE_DELAY_HOURS` | `4` |
@@ -292,11 +381,12 @@ If the user wants changes, let them describe what to change in natural language 
 | `POLL_INTERVAL_MINUTES` | `2` |
 | `SLACK_WEBHOOK_URL` | (empty) |
 | `TIMEZONE` | (auto-detected) |
+| `ZAPAT_MENTION_ENABLED` | `true` |
+| `MAX_WIP_PER_PROGRAM` | `3` (0 = disabled) |
 | `ENABLE_DAILY_STANDUP` | `true` |
 | `ENABLE_WEEKLY_PLANNING` | `true` |
 | `ENABLE_MONTHLY_STRATEGY` | `false` |
 | `ENABLE_WEEKLY_SECURITY` | `true` |
-| Budget caps | $5/$15/$25/$15 |
 
 **Detect timezone automatically:**
 ```bash
@@ -320,18 +410,33 @@ acme-corp/web-app	/home/you/code/web-app	web
 
 ### Generate agents.conf
 
-Use the 4 core roles (always):
+Use all 8 core roles (always):
 ```
 # Zapat — Agent Team Configuration
 builder=engineer
 security=security-reviewer
 product=product-manager
 ux=ux-reviewer
+qa=qa-engineer
+devops=devops-engineer
+docs=technical-writer
+program=program-manager
 ```
 
 ### Generate .env
 
 Create `.env` from `.env.example` using the defaults (with any user modifications applied). If `.env` already exists, back it up to `.env.backup.<timestamp>` first.
+
+Ensure the generated `.env` includes:
+- `CLAUDE_MODEL=claude-opus-4-6`
+- `CLAUDE_SUBAGENT_MODEL=claude-opus-4-6`
+- `CLAUDE_UTILITY_MODEL=claude-haiku-4-5-20251001`
+- `AUTO_TRIAGE_NEW_ISSUES=true`
+- `ZAPAT_MENTION_ENABLED=true`
+- `ZAPAT_BOT_LOGIN=<github-login>` (from Step 1)
+- `MAX_WIP_PER_PROGRAM=3`
+
+Do NOT include budget cap lines in the generated `.env`.
 
 ### Copy agent personas
 ```bash
@@ -405,9 +510,15 @@ Zapat is running.
   Project:          <user's project description>
   Main repo:        acme-corp/backend
   Other repos:      2 additional
-  Agent team:       engineer, security, product, ux
-  Model:            Opus 4.6
+  Agent team:       engineer, security, product, ux, qa, devops, docs, program (8 roles)
+  Agent overrides:  <list any repo-type overrides, or "none">
+  Lead model:       Opus 4.6
+  Sub-agent model:  Opus 4.6
+  Utility model:    Haiku 4.5
   Auto-merge:       <enabled/disabled>
+  @zapat mentions:  enabled
+  WIP per program:  3 concurrent siblings max
+  Scan priority:    finish-over-start
   Dashboard:        http://localhost:8080
 
   Next steps:
@@ -416,4 +527,5 @@ Zapat is running.
   3. Run "bin/zapat status" to check pipeline health
   4. Visit http://localhost:8080 for the dashboard
   5. Edit .env anytime to change settings
+  6. Use "bin/zapat program <issue-number>" to track multi-issue progress
 ```

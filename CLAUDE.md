@@ -24,6 +24,8 @@ If already configured, run `/pipeline-check` or `/zapat:pipeline-check` to verif
 | `hold` | Block auto-merge on this PR |
 | `human-only` | Pipeline should not touch this |
 | `agent-full-review` | Force full team review regardless of complexity |
+| `codex` | Process with OpenAI Codex |
+| `claude` | Process with Claude Code |
 
 Status labels are managed automatically by the pipeline:
 
@@ -33,10 +35,30 @@ Status labels are managed automatically by the pipeline:
 | `zapat-implementing` | Implementation in progress |
 | `zapat-review` | Code review pending |
 | `zapat-testing` | Tests running |
+| `zapat-researching` | Research in progress |
 | `zapat-rework` | Addressing review feedback |
 | `zapat-visual` | Visual verification in progress |
 | `zapat-ci-fix` | CI auto-fix in progress |
 | `needs-rebase` | Auto-rebase failed due to conflicts (manual resolution needed) |
+
+Classification labels (applied during triage):
+
+| Label | Description |
+|-------|-------------|
+| `feature` | New feature |
+| `bug` | Bug fix |
+| `tech-debt` | Technical debt |
+| `security` | Security issue |
+| `research` | Research task |
+
+Priority labels (applied during triage):
+
+| Label | Description |
+|-------|-------------|
+| `P0-critical` | Critical priority |
+| `P1-high` | High priority |
+| `P2-medium` | Medium priority |
+| `P3-low` | Low priority |
 
 ### CLI Commands
 
@@ -48,6 +70,7 @@ Status labels are managed automatically by the pipeline:
 | `bin/zapat metrics query --days 7` | Query job metrics for the last N days |
 | `bin/zapat risk REPO PR_NUM` | Classify risk level of a pull request |
 | `bin/zapat dashboard` | Launch the Next.js monitoring dashboard |
+| `bin/zapat program <issue>` | Track multi-issue progress, dependencies, and ETA |
 | `bin/zapat logs rotate` | Rotate and compress old log files |
 
 ### Skills (project-scoped)
