@@ -2,11 +2,15 @@
 # Maps team roles to agent persona file names (without .md extension)
 # These files live in agents/ and get copied to ~/.claude/agents/ during setup
 #
-# Core roles (required):
+# Core roles (8 built-in):
 builder=engineer
 security=security-reviewer
 product=product-manager
 ux=ux-reviewer
+program=program-manager
+devops=devops-engineer
+qa=qa-engineer
+writer=technical-writer
 #
 # Optional domain-specific roles:
 # compliance=healthcare-advisor

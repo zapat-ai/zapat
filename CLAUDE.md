@@ -123,30 +123,47 @@ GitHub Issue (labeled) --> Poller (every 2 min) --> Trigger Script --> Claude Co
 
 ## Agent Team Recipes
 
-Every task uses a team of specialized agents. The roles are defined in `config/agents.conf` and map to persona files in `agents/`.
+Every task uses a team of specialized agents. The 8 core roles are defined in `config/agents.conf` and map to persona files in `agents/`:
+
+| Role | Persona File | Focus |
+|------|-------------|-------|
+| builder | `engineer.md` | Senior engineer: implements code, writes tests |
+| security | `security-reviewer.md` | OWASP, injection, auth, secrets, dependency vulns |
+| product | `product-manager.md` | User problems, acceptance criteria, scope validation |
+| ux | `ux-reviewer.md` | Friction, accessibility, consistency |
+| program | `program-manager.md` | Delivery sequencing, WIP limits, phase gates |
+| devops | `devops-engineer.md` | CI/CD, IaC, reliability, rollback strategies |
+| qa | `qa-engineer.md` | Adversarial testing, coverage gaps, regression prevention |
+| writer | `technical-writer.md` | Accuracy-first docs, examples, changelog |
+
+Teams are dynamically sized based on complexity classification (solo/duo/full). Not every role joins every task.
 
 ### Implementation Team
 When implementing a feature (`agent-work` label):
-- **builder** (from agents.conf) -- reads the codebase, implements the feature, writes tests
-- **security** (from agents.conf) -- reviews for vulnerabilities, auth issues, injection risks
-- **product** (from agents.conf) -- validates the implementation meets requirements
-- **ux** (from agents.conf) -- reviews user-facing changes for usability
+- **builder** -- reads the codebase, implements the feature, writes tests
+- **security** -- reviews for vulnerabilities, auth issues, injection risks
+- **product** -- validates the implementation meets requirements
+- **ux** -- reviews user-facing changes for usability
+- **devops** -- joins when infrastructure/CI changes are involved
+- **qa** -- joins for full-complexity tasks to verify test coverage
 
 ### Code Review Team
 When reviewing a PR (`agent` label on PR):
 - **security** -- security-focused review
 - **builder** -- code quality, architecture, test coverage
-- **ux** -- UX implications of the changes
+- **ux** -- UX implications of the changes (skipped if no UI files)
+- **product** -- scope validation (joins for full-complexity reviews)
 
 ### Research Team
 When investigating a topic (`agent-research` label):
 - **product** -- defines research scope and success criteria
 - **builder** -- technical investigation and feasibility
 - **security** -- security implications and risks
+- **program** -- delivery sequencing for phased decomposition
 
 ### Triage Team
 When triaging a new issue (`agent` label):
-- All four core roles collaborate to assess complexity, priority, security concerns, and recommended approach.
+- **builder**, **product**, and **security** collaborate to assess complexity, priority, security concerns, and recommended approach.
 
 ### Bug Investigation Team
 When debugging a complex issue, spin up parallel hypothesis investigators:

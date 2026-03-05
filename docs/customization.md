@@ -275,13 +275,14 @@ Edit the prompt template in `prompts/`. For example, to add a database expert to
 
 ### Example: Adding a QA step
 
-To add a dedicated QA review after implementation:
+Zapat ships with a built-in QA engineer persona (`agents/qa-engineer.md`) mapped to the `qa` role. To add it as a dedicated pipeline step with its own trigger:
 
-1. Create `agents/qa-engineer.md` with the QA persona.
-2. Add `qa=qa-engineer` to `config/agents.conf`.
-3. Create `prompts/qa-review.txt` with the QA prompt template.
-4. Create `triggers/on-qa-review.sh` that launches the QA agent.
-5. Add a `agent-qa` label to your detection logic in `bin/poll-github.sh`.
+1. The persona already exists at `agents/qa-engineer.md` and is mapped as `qa=qa-engineer` in `config/agents.conf.example`.
+2. Create `prompts/qa-review.txt` with the QA prompt template.
+3. Create `triggers/on-qa-review.sh` that launches the QA agent.
+4. Add an `agent-qa` label to your detection logic in `bin/poll-github.sh`.
+
+Alternatively, the QA engineer already participates in implementation and review teams for full-complexity tasks -- no custom trigger needed for most use cases.
 
 ## Shared Agent Memory
 

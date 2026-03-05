@@ -17,12 +17,12 @@ Label a GitHub issue. Walk away. Come back to a tested, reviewed, merge-ready PR
      ▼                                                              │
  ┌────────┐    ┌───────────┐    ┌──────────┐    ┌────────┐    ┌────────┐
  │ Triage │───▶│ Implement │───▶│   Test   │───▶│ Review │───▶│  Merge │
- │ 4 agents│   │  5 agents │    │ 1 agent  │    │4 agents│    │  Gate  │
+ │ 3 agents│   │ 3-5 agents│    │ 1 agent  │    │3-5 agt │    │  Gate  │
  └────────┘    └───────────┘    └──────────┘    └────────┘    └────────┘
   10 min        30 min           20 min          10 min        risk-based
 ```
 
-A cron job polls GitHub every 2 minutes. When it finds a labeled issue or PR, it dispatches a **multi-agent team** in a background tmux session. Each stage uses specialized expert personas -- engineers, security reviewers, product managers, UX critics -- that debate, review each other's work, and converge on a result.
+A cron job polls GitHub every 2 minutes. When it finds a labeled issue or PR, it dispatches a **multi-agent team** in a background tmux session. Each stage uses specialized expert personas -- drawn from 8 core roles (engineers, security reviewers, product managers, UX critics, DevOps engineers, QA engineers, program managers, technical writers) -- that debate, review each other's work, and converge on a result. Teams use a 3-tier model strategy: Opus for leads and sub-agents, Haiku for utility tasks.
 
 ---
 
@@ -47,15 +47,18 @@ A cron job polls GitHub every 2 minutes. When it finds a labeled issue or PR, it
 │                                            ┌───────▼────────┐  │
 │  ┌──────────────┐     ┌──────────────┐     │  Claude Code   │  │
 │  │  Dashboard   │     │  Pipeline    │     │  Agent Teams   │  │
-│  │  (Next.js)   │     │  CLI         │     │                │  │
+│  │  (Next.js)   │     │  CLI         │     │  (8 roles)     │  │
 │  │              │     │              │     │ ┌────────────┐ │  │
-│  │ • Kanban     │     │ • status     │     │ │  Builder   │ │  │
+│  │ • Kanban     │     │ • status     │     │ │  Engineer  │ │  │
 │  │ • Charts     │     │ • health     │     │ │  Security  │ │  │
-│  │ • Activity   │     │ • metrics    │     │ │  UX Critic │ │  │
-│  │ • Health     │     │ • risk       │     │ │  Product   │ │  │
-│  └──────────────┘     │ • dashboard  │     │ │  Product   │ │  │
-│                       │ • logs       │     │ └────────────┘ │  │
-│                       └──────────────┘     └────────────────┘  │
+│  │ • Activity   │     │ • metrics    │     │ │  Product   │ │  │
+│  │ • Health     │     │ • risk       │     │ │  UX        │ │  │
+│  └──────────────┘     │ • dashboard  │     │ │  DevOps    │ │  │
+│                       │ • logs       │     │ │  QA        │ │  │
+│                       │ • program    │     │ │  Program   │ │  │
+│                       └──────────────┘     │ │  Writer    │ │  │
+│                                            │ └────────────┘ │  │
+│                                            └────────────────┘  │
 │                                                                 │
 │  ┌──────────────┐     ┌──────────────┐     ┌────────────────┐  │
 │  │ Shared Memory│     │ State Machine│     │  Notifications │  │
@@ -71,8 +74,8 @@ A cron job polls GitHub every 2 minutes. When it finds a labeled issue or PR, it
 | Component | What It Does |
 |-----------|-------------|
 | **Poll Loop** | Scans GitHub repos every 2 min for labeled issues/PRs, dispatches agents |
-| **Trigger Scripts** | 7 scripts that launch Claude agent teams for triage, implementation, testing, review, rework, research, and test-writing |
-| **Agent Personas** | Expert personas (engineer, security, UX, product, and optional domain-specific roles) with deep domain prompts |
+| **Trigger Scripts** | 10 scripts that launch Claude agent teams for triage, implementation, testing, review, rework, research, test-writing, visual verification, CI auto-fix, and auto-rebase |
+| **Agent Personas** | 8 core expert personas (engineer, security reviewer, product manager, UX reviewer, DevOps engineer, QA engineer, program manager, technical writer) plus optional domain-specific roles |
 | **Agent Teams** | Every task uses 3-5 agents that collaborate — implementation gets a builder + 4 reviewers |
 | **State Machine** | Tracks each item through pending → running → completed/failed with exponential-backoff retries (10min → 30min → abandoned) |
 | **Risk Classifier** | Scores PRs by files touched, changeset size, repo type, and labels to determine merge safety |
@@ -113,11 +116,11 @@ A cron job polls GitHub every 2 minutes. When it finds a labeled issue or PR, it
 | Metric | Value |
 |--------|-------|
 | Lines of code | ~10,000 (shell + Node.js) |
-| Agent personas | 4 core + custom |
+| Agent personas | 8 core + custom |
 | Team recipes | 20 |
-| Trigger scripts | 7 |
-| Prompt templates | 12 |
-| Pipeline CLI commands | 6 |
+| Trigger scripts | 10 |
+| Prompt templates | 14 |
+| Pipeline CLI commands | 11 |
 | Max parallel agents | 10 |
 | Poll interval | 2 minutes |
 | Triage time | ~10 minutes |
