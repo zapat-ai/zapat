@@ -10,7 +10,7 @@ That's Zapat.
 
 Zapat is an autonomous development pipeline that turns GitHub issues into merged pull requests using teams of AI agents powered by [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-When you label an issue, Zapat assembles a team of specialized agents -- a software engineer, a security reviewer, a product manager, and a UX critic. They collaborate on the task in real time, just like a human team would: the engineer writes code while the reviewers audit it, catch problems, and request changes. When the team converges on a result, they disband and the next stage takes over.
+When you label an issue, Zapat assembles a team of specialized agents -- drawn from 8 core roles including engineers, security reviewers, product managers, UX critics, DevOps engineers, QA engineers, program managers, and technical writers. They collaborate on the task in real time, just like a human team would: the engineer writes code while the reviewers audit it, catch problems, and request changes. When the team converges on a result, they disband and the next stage takes over.
 
 Zapat isn't a single AI assistant writing code. It's a **pipeline** -- a sequence of purpose-built teams that triage, implement, test, review, and merge, each operating independently with fresh context and specific expertise.
 
@@ -48,9 +48,9 @@ Here's the lifecycle of a typical issue:
 
 1. **You create an issue** describing a feature, bug fix, or task. You add the `agent` label. That's your only job.
 
-2. **Triage team assembles** (4 agents, ~10 minutes). They analyze the issue's complexity, security implications, priority, and recommended approach. If it's ready for implementation, they add the `agent-work` label and disband.
+2. **Triage team assembles** (3+ agents, ~10 minutes). They analyze the issue's complexity, security implications, priority, and recommended approach. If it's ready for implementation, they add the `agent-work` label and disband.
 
-3. **Implementation team assembles** (4-5 agents, ~30 minutes). A builder agent works in an isolated git worktree -- it never touches your main checkout. While the builder writes code and tests, a security reviewer audits for vulnerabilities, a product manager validates scope, and a UX critic evaluates the experience. They iterate until all reviewers approve, then the builder opens a PR and the team disbands.
+3. **Implementation team assembles** (3-5 agents, ~30 minutes). A builder agent works in an isolated git worktree -- it never touches your main checkout. While the builder writes code and tests, a security reviewer audits for vulnerabilities, a product manager validates scope, and a UX critic evaluates the experience. Additional specialists (DevOps, QA) join for full-complexity tasks. They iterate until all reviewers approve, then the builder opens a PR and the team disbands.
 
 4. **Test team assembles** (~20 minutes). Runs the full test suite, verifies the build, and posts results.
 
@@ -75,19 +75,26 @@ Everything is controlled through GitHub labels. No new tools to learn, no dashbo
 | `agent-work` | Skip triage, implement immediately |
 | `agent-research` | Research and analyze -- no code changes |
 | `agent-write-tests` | Generate tests for existing code |
+| `agent-plan` | Proposed work, pending human approval |
+| `agent-phase-2` | Phase 2 work, awaiting Phase 1 |
+| `agent-phase-3` | Phase 3 work, awaiting Phase 2 |
 | `hold` | Block auto-merge on a PR |
 | `human-only` | Pipeline ignores this item |
 
 ### Collaborative agent teams
 
-Every task uses a team of 3-5 agents with distinct expertise. They don't work sequentially -- they collaborate in real time, catching issues early instead of in review. The four core personas are:
+Every task uses a team of 3-5 agents with distinct expertise, dynamically sized based on complexity. They don't work sequentially -- they collaborate in real time, catching issues early instead of in review. The eight core personas are:
 
-- **Builder** -- reads the codebase, implements features, writes tests.
+- **Engineer** -- reads the codebase, implements features, writes tests.
 - **Security reviewer** -- audits for vulnerabilities, injection risks, auth issues.
 - **Product manager** -- validates that the implementation meets requirements.
-- **UX critic** -- reviews user-facing changes for usability.
+- **UX reviewer** -- reviews user-facing changes for usability.
+- **DevOps engineer** -- reviews CI/CD, infrastructure, deployment, and reliability.
+- **QA engineer** -- adversarial testing, coverage gaps, regression prevention.
+- **Program manager** -- delivery sequencing, WIP limits, phase gates.
+- **Technical writer** -- accuracy-first documentation, examples, changelog.
 
-You can add custom personas for your domain (database engineer, compliance advisor, accessibility expert) by dropping a markdown file in the `agents/` directory.
+Not every role joins every task -- teams are composed based on the job type and complexity classification (solo/duo/full). You can add custom personas for your domain (database engineer, compliance advisor, accessibility expert) by dropping a markdown file in the `agents/` directory.
 
 ### Risk-based auto-merge
 
@@ -154,7 +161,7 @@ See the [README](../README.md) for detailed installation instructions per platfo
 
 ### A note on resources
 
-Zapat runs multiple agents concurrently. A single pipeline job can spin up 4+ agents in parallel, and multiple jobs can run simultaneously. We recommend running Zapat on a **dedicated machine** (Mac Mini, Linux server, or cloud instance) rather than a laptop you use for daily work. Monitor your Claude API usage or subscription quota, and use `MAX_CONCURRENT_WORK` in `.env` to limit parallelism.
+Zapat runs multiple agents concurrently. A single pipeline job can spin up 4+ agents in parallel, and multiple jobs can run simultaneously. To balance quality and cost, Zapat uses a **3-tier model strategy**: Opus for team leads and sub-agents (strong reasoning), Haiku for utility tasks (test runners, standups). We recommend running Zapat on a **dedicated machine** (Mac Mini, Linux server, or cloud instance) rather than a laptop you use for daily work. Monitor your Claude API usage or subscription quota, and use `MAX_CONCURRENT_WORK` in `.env` to limit parallelism.
 
 ## Use Cases
 

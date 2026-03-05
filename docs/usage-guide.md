@@ -54,7 +54,7 @@ The pipeline is now running. It polls GitHub every 2 minutes automatically.
 
 ### Triage an issue automatically
 
-Add the `agent` label to any GitHub issue. Within 10 minutes, a 4-agent team (engineer, security reviewer, product manager, UX reviewer) will post a triage comment with:
+Add the `agent` label to any GitHub issue. Within 10 minutes, an agent team (engineer, security reviewer, product manager) will post a triage comment with:
 
 - Complexity assessment (Small / Medium / Large)
 - Suggested priority (P0–P3)
@@ -72,13 +72,13 @@ Label: agent
 
 ### Implement an issue
 
-Add the `agent-work` label (or let triage add it). A 5-agent team works in an isolated git worktree:
+Add the `agent-work` label (or let triage add it). A team of 3-5 agents (dynamically sized by complexity) works in an isolated git worktree. The team is drawn from 8 core roles:
 
-1. Builder reads the codebase and implements
-2. Security reviewer checks for vulnerabilities
-3. UX reviewer evaluates the interface
-4. Product manager confirms acceptance criteria
-5. Product manager confirms acceptance criteria
+1. **Engineer** reads the codebase and implements
+2. **Security reviewer** checks for vulnerabilities
+3. **UX reviewer** evaluates the interface
+4. **Product manager** confirms acceptance criteria
+5. Additional roles (**DevOps**, **QA**, **program manager**, **technical writer**) join as needed for full-complexity tasks
 
 Result: a PR on an `agent/issue-{number}-{slug}` branch with tests.
 
@@ -93,7 +93,7 @@ Label: agent-work
 
 ### Review a PR
 
-Add the `agent` label to any PR. A 4-agent review team posts:
+Add the `agent` label to any PR. A review team (3-5 agents, sized by complexity) posts:
 
 - Risk level (Low / Medium / High)
 - Auto-merge recommendation
@@ -207,13 +207,22 @@ bin/zapat dashboard --static      # Generate static HTML
 | `agent` | On issues: triage team analyzes. On PRs: review team posts code review |
 | `agent-work` | Skip triage, implementation team builds it immediately |
 | `agent-research` | Strategy team investigates and decomposes |
+| `agent-write-tests` | Write tests for specified code |
+| `agent-plan` | Proposed work, pending human approval |
+| `agent-phase-2` | Phase 2 work, awaiting Phase 1 completion |
+| `agent-phase-3` | Phase 3 work, awaiting Phase 2 completion |
+| `agent-full-review` | Force full team review regardless of complexity |
 | `hold` | Blocks auto-merge on a PR |
 | `human-only` | Pipeline skips this item entirely |
 | `zapat-triaging` | [Auto] Triage in progress |
 | `zapat-implementing` | [Auto] Implementation in progress |
 | `zapat-review` | [Auto] Code review pending |
 | `zapat-testing` | [Auto] Tests running |
+| `zapat-researching` | [Auto] Research in progress |
 | `zapat-rework` | [Auto] Builder fixing review feedback |
+| `zapat-visual` | [Auto] Visual verification in progress |
+| `zapat-ci-fix` | [Auto] CI auto-fix in progress |
+| `needs-rebase` | [Auto] Auto-rebase failed, needs manual resolution |
 
 ---
 

@@ -5,6 +5,28 @@ All notable changes to Zapat will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-02-26
+
+### Added
+
+- 4 new agent personas: devops-engineer (CI/CD, IaC, reliability), program-manager (delivery sequencing, WIP limits, phase gates), qa-engineer (adversarial testing, coverage gaps), technical-writer (accuracy-first docs, examples)
+- 3-tier model strategy: Lead (Opus) for orchestrators, Sub-agent (Opus) for reviewers/analysts, Utility (Haiku) for test runners and scheduled jobs
+- Opus sub-agents: team-based prompts spawn Task sub-agents using `CLAUDE_SUBAGENT_MODEL` (default Opus) with `model:` parameter in Task tool calls
+- `agent-plan` label for proposed work pending human approval
+- `agent-phase-2` and `agent-phase-3` labels for phased execution
+- `MAX_WIP_PER_PROGRAM` config for program-level WIP limits (default 3)
+- Finish-over-start scan priority in poller (rework > CI fix > test > review > new work)
+- `bin/zapat program` CLI command for tracking multi-issue progress, dependencies, and ETA
+- Classification labels (`feature`, `bug`, `tech-debt`, `security`, `research`) applied during triage
+- Priority labels (`P0-critical`, `P1-high`, `P2-medium`, `P3-low`) applied during triage
+
+### Changed
+
+- Agent roster expanded from 4 core roles to 8 core roles
+- Default `CLAUDE_SUBAGENT_MODEL` changed from Sonnet to Opus
+- Setup wizards (plugin + project-scoped) updated with COE learnings, 8 agent roles, and Opus sub-agent configuration
+- Budget caps removed from wizard defaults (unclear with subscription plans)
+
 ## [1.0.0] - 2026-02-15
 
 ### Added
@@ -28,4 +50,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - tmux-based session management with slot allocation
 - Comprehensive documentation: overview, usage guide, customization, Linux setup
 
+[1.1.0]: https://github.com/zapat-ai/zapat/releases/tag/v1.1.0
 [1.0.0]: https://github.com/zapat-ai/zapat/releases/tag/v1.0.0

@@ -2,7 +2,7 @@
 
 **On-demand AI dev teams, powered by Claude Code.**
 
-Label a GitHub issue. An AI team assembles itself -- engineers, security reviewers, product managers, UX critics -- implements the feature, tests it, reviews its own work, and opens a merge-ready PR. When the work is done, the team disbands. No scheduling. No idle seats.
+Label a GitHub issue. An AI team assembles itself -- engineers, security reviewers, product managers, UX critics, DevOps engineers, QA engineers, and more -- implements the feature, tests it, reviews its own work, and opens a merge-ready PR. When the work is done, the team disbands. No scheduling. No idle seats.
 
 ```
  GitHub Issue                                                    Merged PR
@@ -18,7 +18,7 @@ Label a GitHub issue. An AI team assembles itself -- engineers, security reviewe
   disbands      disbands         disbands       disbands
 ```
 
-Each stage spins up a purpose-built team of Claude Code agents. They collaborate in real time -- the builder writes code while the security reviewer audits it, the product manager validates scope, and the UX critic checks the experience. When they converge on a result, the team dissolves and the next stage takes over. Your entire dev pipeline runs itself, from issue to merged PR, in about an hour.
+Each stage spins up a purpose-built team of Claude Code agents. They collaborate in real time -- the builder writes code while the security reviewer audits it, the product manager validates scope, the UX critic checks the experience, and specialized roles (DevOps, QA, program management, technical writing) join as needed. When they converge on a result, the team dissolves and the next stage takes over. Your entire dev pipeline runs itself, from issue to merged PR, in about an hour.
 
 ## Quick Start
 
@@ -75,13 +75,19 @@ Zapat runs multiple Claude Code agents concurrently -- a single pipeline job can
 
 **Compute:** Each Claude Code agent is a separate process. When several jobs run simultaneously (e.g., one issue being implemented while another is being reviewed), your machine may have 8-12+ agents active at once. This will saturate CPU and memory on a laptop or shared workstation. **We strongly recommend running Zapat on a dedicated machine** -- a Mac Mini, a Linux server, or a cloud instance that isn't used for your daily work.
 
-**API usage:** Every agent call uses Claude tokens. A typical issue-to-merge pipeline (triage + implement + review + test) consumes significant token volume.
+**API usage:** Every agent call uses Claude tokens. A typical issue-to-merge pipeline (triage + implement + review + test) consumes significant token volume. Zapat uses a **3-tier model strategy** to balance quality and cost:
+
+| Tier | Environment Variable | Default | Used For |
+|------|---------------------|---------|----------|
+| Lead | `CLAUDE_MODEL` | Opus | Team leads / orchestrators |
+| Sub-agent | `CLAUDE_SUBAGENT_MODEL` | Opus | Reviewers, analysts (Task sub-agents) |
+| Utility | `CLAUDE_UTILITY_MODEL` | Haiku | Test runners, standups, planning |
 
 - **Claude Code subscription (Max/Team/Enterprise):** You get a usage quota rather than per-token billing. Monitor your usage patterns in your account dashboard to ensure you stay within your plan's limits. Zapat's concurrent agents can consume quota quickly.
 - **Anthropic API (pay-per-token):** Set spending limits in your [Anthropic Console](https://console.anthropic.com/) to avoid surprises.
 
 Either way:
-- Use `CLAUDE_MODEL` in `.env` or per-project `project.env` to choose cost-appropriate models (e.g., Sonnet for routine work, Opus for complex reasoning)
+- Configure the 3-tier model strategy in `.env` or per-project `project.env` to choose cost-appropriate models (e.g., Opus for leads, Sonnet for sub-agents, Haiku for utility tasks)
 - Adjust `MAX_CONCURRENT_WORK` in `.env` to limit how many jobs run simultaneously
 
 **Rate limits:** The poller makes GitHub API calls every 2 minutes across all configured repos. With many repos or rapid labeling, you may hit GitHub's rate limit (5,000 requests/hour for authenticated users). The poller detects this and backs off automatically, but be mindful of your usage.
@@ -90,9 +96,9 @@ Either way:
 
 1. **You** add the `agent` label to a GitHub issue. That's your only job.
 2. **Poller** (runs every 2 min via cron) detects the label and kicks off the pipeline.
-3. **Triage team assembles** -- 4 agents analyze complexity, priority, security concerns, and post a structured assessment. If ready, they auto-label it for implementation and disband.
-4. **Builder team assembles** -- an engineer, security reviewer, product manager, and UX critic spin up around an isolated git worktree. The engineer implements while the others review in real time. They iterate until all reviewers approve, then the engineer opens a PR and the team disbands.
-5. **Review team assembles** -- a fresh set of agents reviews the PR from scratch (security, code quality, UX). They post a structured review with risk classification, then disband.
+3. **Triage team assembles** -- agents (engineer, security reviewer, product manager) analyze complexity, priority, security concerns, and post a structured assessment. If ready, they auto-label it for implementation and disband.
+4. **Builder team assembles** -- a team of 3-5 agents (drawn from 8 available roles: engineer, security reviewer, product manager, UX reviewer, DevOps engineer, QA engineer, program manager, technical writer) spins up around an isolated git worktree. The engineer implements while reviewers audit in real time. They iterate until all reviewers approve, then the engineer opens a PR and the team disbands.
+5. **Review team assembles** -- a fresh set of agents reviews the PR from scratch (security, code quality, architecture, UX). They post a structured review with risk classification, then disband.
 6. **Test team assembles** -- runs the full test suite, verifies the build, posts results, disbands.
 7. **Auto-merge gate** evaluates risk and merges:
    - Low risk: merge immediately
@@ -109,6 +115,10 @@ Total time from label to merge: about 1 hour for a typical feature. Each team ex
 | `agent-work` | Skip triage, go straight to implementation |
 | `agent-research` | Research and analyze -- no code changes |
 | `agent-write-tests` | Write tests for the specified code |
+| `agent-plan` | Proposed work, pending human approval (not auto-implemented) |
+| `agent-phase-2` | Phase 2 work, awaiting Phase 1 completion |
+| `agent-phase-3` | Phase 3 work, awaiting Phase 2 completion |
+| `agent-full-review` | Force full team review regardless of complexity |
 | `hold` | Block auto-merge on a PR |
 | `human-only` | Pipeline ignores this item entirely |
 
@@ -118,9 +128,12 @@ Total time from label to merge: about 1 hour for a typical feature. Each team ex
 |-------|---------|
 | `zapat-triaging` | Triage in progress |
 | `zapat-implementing` | Implementation in progress |
-| `zapat-review` | Code review in progress |
+| `zapat-review` | Code review pending |
 | `zapat-testing` | Tests running |
+| `zapat-researching` | Research in progress |
 | `zapat-rework` | Addressing review feedback |
+| `zapat-visual` | Visual verification in progress |
+| `zapat-ci-fix` | CI auto-fix in progress |
 | `needs-rebase` | Auto-rebase failed, manual resolution needed |
 
 You never need to add internal labels -- the pipeline manages them automatically.
@@ -145,6 +158,9 @@ bin/zapat metrics query --last-hour --status failure
 
 # Classify PR risk before merging
 bin/zapat risk your-org/backend 42
+
+# Track multi-issue program progress, dependencies, and ETA
+bin/zapat program your-org/backend 10
 
 # Launch the monitoring dashboard
 bin/zapat dashboard
@@ -284,7 +300,7 @@ zapat/
     run-agent.sh    Runs Claude Code in non-interactive mode for scheduled jobs
     notify.sh       Slack notifications
     setup-labels.sh Creates required GitHub labels on configured repos
-  triggers/         Event handlers launched by the poller
+  triggers/         Event handlers launched by the poller (10 scripts)
     on-new-issue.sh      Triage a new issue
     on-work-issue.sh     Implement a feature
     on-new-pr.sh         Review a PR
@@ -293,6 +309,8 @@ zapat/
     on-test-pr.sh        Run tests on a PR
     on-research-issue.sh Research and strategy tasks
     on-write-tests.sh    Write missing tests
+    on-visual-verify.sh  Visual/screenshot-based UX verification
+    on-ci-fix.sh         Auto-fix trivial CI failures
   jobs/             Scheduled cron jobs
     daily-standup.sh     Daily activity summary (Mon-Fri)
     weekly-planning.sh   Weekly planning digest
